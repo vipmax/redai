@@ -2,3 +2,4 @@
 .env
 test.rs
 .idea
+.DS_Store
