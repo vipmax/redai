@@ -4,6 +4,8 @@ A terminal-based AI-powered code editor for developers, written in Rust.
 
 redai combines a fast, modern TUI code editor with context-aware code completion and editing powered by large language models (LLMs) such as OpenRouter/CodeStral. It is designed for productivity, code navigation, and seamless AI-assisted coding directly from your terminal.
 
+![editor](screen.jpg)
+
 ## Features
 
 - **Terminal UI**: Fast, responsive code editor with file tree navigation using [ratatui].
