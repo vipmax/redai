@@ -131,42 +131,6 @@ pub enum ChangedRangeKind {
     Delete,
 }
 
-// pub fn compute_changed_ranges_normalized(edits: &[Edit]) -> Vec<ChangedRange> {
-//     // Sort edits by their start offset
-//     let mut sorted_edits = edits.to_vec();
-//     sorted_edits.sort_by_key(|e| e.start);
-//
-//     let mut changed_ranges = Vec::new();
-//     let mut offset_shift: usize = 0;
-//
-//     for edit in sorted_edits.iter() {
-//         let offset = edit.start;
-//         if edit.text.is_empty() {
-//
-//             let start = offset + offset_shift;
-//             let removed_len = edit.text.chars().count();
-//             let end = start + removed_len;
-//             changed_ranges.push(ChangedRange {
-//                 start,
-//                 end,
-//                 kind: ChangedRangeKind::Delete,
-//             });
-//             offset_shift -= removed_len;
-//         } else {
-//             let start = offset + offset_shift;
-//             let end = start + edit.text.chars().count();
-//             changed_ranges.push(ChangedRange {
-//                 start,
-//                 end,
-//                 kind: ChangedRangeKind::Insert,
-//             });
-//             offset_shift += edit.text.chars().count();
-//         }
-//     }
-//
-//     changed_ranges
-// }
-
 pub fn compute_changed_ranges_normalized(edits: &[Edit]) -> Vec<ChangedRange> {
     // Sort edits by their start offset
     let mut sorted_edits = edits.to_vec();
@@ -269,7 +233,7 @@ mod tests {
         ])
     }
 
-        #[test]
+    #[test]
     fn test_compute_edits_complex() {
         let before = "main rust here";
         let after =  "fn main() {\n    println!(\"Hello, world!\");\n}";

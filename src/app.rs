@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use crossterm::{
     event::{
-        Event, KeyCode, KeyModifiers, KeyEvent, KeyEventKind, 
+        Event, KeyCode, KeyModifiers, KeyEvent, KeyEventKind,
         MouseEventKind, MouseEvent
     },
 };
@@ -31,21 +31,29 @@ use crate::llm::LlmClient;
 use crate::diff::ChangedRangeKind;
 use crate::diff::EditKind::*;
 use crate::diff::Edit;
-use crate::utils::{abs_file, is_ignored_path};
+use crate::utils::{abs_file};
 use crate::watcher::FsWatcher;
+use crate::search::{SearchPanel, SearchAction, SearchMode};
+use crate::tree::{build_initial_tree_items, expand_path_in_tree_items};
 use notify::event::ModifyKind;
 
 const COLOR_INSERT: &str = "#02a365";
 const COLOR_DELETE: &str = "#f6c99f";
+
+#[derive(PartialEq)]
+pub enum LeftPanelMode {
+    Tree,
+    Search,
+}
 
 pub struct App {
     editor: Editor,
     editor_area: Rect,
     filename: String,
     quit: bool,
-    split_ratio: usize, 
+    split_ratio: usize,
     is_resizing: bool,
-    tree_focused: bool,
+    left_panel_focused: bool,
     tree_area: Rect,
     tree_state: TreeState<String>,
     tree_items: Vec<TreeItem<'static, String>>,
@@ -54,12 +62,14 @@ pub struct App {
     autocomplete_tx: mpsc::Sender<Result<Vec<Edit>>>,
     autocomplete_rx: mpsc::Receiver<Result<Vec<Edit>>>,
     watcher: FsWatcher,
-    self_update: bool
+    self_update: bool,
+    search_panel: SearchPanel,
+    left_panel_mode: LeftPanelMode,
 }
 
 impl App {
     pub fn new(
-        language: &str, content: &str, 
+        language: &str, content: &str,
         filename: &str, llm_client: LlmClient
     ) -> Self {
         let theme = vesper();
@@ -69,16 +79,15 @@ impl App {
         let (tx, rx) = mpsc::channel(1);
         let root_path = std::env::current_dir().unwrap();
         let items = build_initial_tree_items(&root_path);
-        let tree_focused = if filename.is_empty() { true } else { false };        
+        let tree_focused = if filename.is_empty() { true } else { false };
         let watcher = FsWatcher::new();
-        
+
         let mut tree_state = TreeState::default();
-        
+
         if let Some(item) = items.first() {
-            // open the first item
             tree_state.open(vec![item.identifier().clone()]);
         }
-        
+
         Self {
             quit: false,
             editor,
@@ -90,12 +99,14 @@ impl App {
             autocomplete_rx: rx,
             split_ratio: 30,
             is_resizing: false,
-            tree_focused,
+            left_panel_focused: tree_focused,
             tree_area: Rect::default(),
             tree_state: tree_state,
             tree_items: items,
             watcher,
-            self_update: false
+            self_update: false,
+            search_panel: SearchPanel::new(),
+            left_panel_mode: LeftPanelMode::Tree,
         }
     }
 
@@ -131,15 +142,6 @@ impl App {
     }
 
     fn render(&mut self, frame: &mut Frame) {
-        let widget = Tree::new(&self.tree_items)
-            .expect("all item identifiers are unique")
-            .highlight_style(
-                Style::new()
-                    .fg(Color::White)
-                    .bg(Color::DarkGray)
-                    .add_modifier(Modifier::BOLD),
-            );
-
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
@@ -151,37 +153,46 @@ impl App {
         self.tree_area = chunks[0];
         self.editor_area = chunks[1];
 
-        frame.render_stateful_widget(widget, self.tree_area, &mut self.tree_state);
+        // Render left panel based on mode
+        if self.left_panel_mode == LeftPanelMode::Search {
+            // Render search panel
+            self.search_panel.render(frame, self.tree_area);
+        } else {
+            // Render tree panel
+            let widget = Tree::new(&self.tree_items)
+                .expect("all item identifiers are unique")
+                .highlight_style(
+                    Style::new()
+                        .fg(Color::White)
+                        .bg(Color::DarkGray)
+                        .add_modifier(Modifier::BOLD),
+                );
+            frame.render_stateful_widget(widget, self.tree_area, &mut self.tree_state);
+        }
 
         if self.filename.is_empty() {
             let welcome = create_welcome_widget();
             frame.render_widget(welcome, self.editor_area);
         } else {
             frame.render_widget(&self.editor, self.editor_area);
-            
+
             let cursor = self.editor.get_visible_cursor(&self.editor_area);
             if let Some((x,y)) = cursor {
                 frame.set_cursor_position(Position::new(x, y));
             }
         }
-
-        // let splitter_x = self.tree_area.x + self.tree_area.width;
-        // let splitter_style = Style::default().fg(Color::Gray);
-        // for y in self.tree_area.y..(self.tree_area.y + self.tree_area.height) {
-        //     frame.buffer_mut().set_string(splitter_x, y, "│", splitter_style);
-        // }
     }
 
     async fn handle_event(&mut self, event: &Event) -> Result<()> {
         match event {
             Event::Key(key) => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('t') {
-                    self.tree_focused = !self.tree_focused;
+                    self.left_panel_focused = !self.left_panel_focused;
                     return Ok(());
                 }
             }
             Event::Mouse(mouse) => {
-                self.tree_focused = is_focused(mouse, self.tree_area); 
+                self.left_panel_focused = is_focused(mouse, self.tree_area);
 
                 let splitter_x = self.tree_area.x + self.tree_area.width;
 
@@ -190,14 +201,14 @@ impl App {
                         if mouse.column == splitter_x || mouse.column == splitter_x+1 {
                             self.is_resizing = true;
                         } else {
-                            self.tree_focused = is_focused(mouse, self.tree_area);
+                            self.left_panel_focused = is_focused(mouse, self.tree_area);
                         }
                     }
                     MouseEventKind::Drag(_) => {
                         if self.is_resizing {
                             let total_width = self.tree_area.width + self.editor_area.width + 2;
                             let new_ratio = (mouse.column as f32 / total_width as f32 * 100.0) as u16;
-                            self.split_ratio = new_ratio.clamp(0, 100) as usize; 
+                            self.split_ratio = new_ratio.clamp(0, 100) as usize;
                         }
                     }
                     MouseEventKind::Up(_) => {
@@ -211,8 +222,12 @@ impl App {
 
         if self.is_resizing { return Ok(());}
 
-        if self.tree_focused {
-            self.handle_tree_event(event).await?;
+        if self.left_panel_focused {
+            if self.left_panel_mode == LeftPanelMode::Search {
+                self.handle_search_event(event).await?;
+            } else {
+                self.handle_tree_event(event).await?;
+            }
         } else {
             self.handle_editor_event(event).await?;
         }
@@ -222,12 +237,28 @@ impl App {
 
     async fn handle_editor_event(&mut self, event: &Event) -> Result<()> {
         match event {
-            Event::Key(key) => {  
+            Event::Key(key) => {
+                // Handle search activation
+                if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('f') {
+                    self.search_panel.activate(SearchMode::Search);
+                    self.left_panel_mode = LeftPanelMode::Search;
+                    self.left_panel_focused = true;
+                    return Ok(());
+                }
+
+                // Handle global search activation
+                if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('g') {
+                    self.search_panel.activate(SearchMode::GlobalSearch);
+                    self.left_panel_mode = LeftPanelMode::Search;
+                    self.left_panel_focused = true;
+                    return Ok(());
+                }
+
                 // cancel autocomplete if is active, else nothing
                 self.autocomplete_handle.take().map(|h| h.abort());
 
                 let has_marks = self.editor.has_marks();
-                
+
                 if key.code == KeyCode::Esc && has_marks {
                     self.editor.remove_marks();
                     self.editor.handle_undo();
@@ -246,7 +277,7 @@ impl App {
                     let accepted = key.code == KeyCode::Tab ||
                         key.code == KeyCode::Enter;
                     if has_marks {
-                        if accepted { 
+                        if accepted {
                             self.editor.remove_marks();
                         } else {
                             self.editor.remove_marks();
@@ -273,8 +304,8 @@ impl App {
             Event::Key(key) if !matches!(key.kind, KeyEventKind::Press) => { },
             Event::Key(key) => match key.code {
                 KeyCode::Char('q') => { self.quit = true; },
-                KeyCode::Enter => { 
-                    self.tree_state.toggle_selected(); 
+                KeyCode::Enter => {
+                    self.tree_state.toggle_selected();
                     check_selected = true;
                 },
                 // KeyCode::Esc => { self.quit = true; },
@@ -289,16 +320,16 @@ impl App {
                 _ => { },
             },
             Event::Mouse(mouse) => match mouse.kind {
-                MouseEventKind::ScrollDown => { 
+                MouseEventKind::ScrollDown => {
                     let offset_y = self.tree_state.get_offset();
                     let len = self.tree_state.flatten(&self.tree_items).len();
                     let area_height = self.tree_area.height as usize;
                     if offset_y < len.saturating_sub(area_height) {
-                        self.tree_state.scroll_down(1); 
+                        self.tree_state.scroll_down(1);
                     }
                 },
                 MouseEventKind::ScrollUp => { self.tree_state.scroll_up(1); },
-                MouseEventKind::Down(_button) => { 
+                MouseEventKind::Down(_button) => {
                     self.tree_state.click_at(Position::new(mouse.column, mouse.row));
                     check_selected = true;
                 },
@@ -312,11 +343,13 @@ impl App {
 
         if check_selected && !selected.is_empty() {
             let name = selected.last().unwrap().to_string();
-            
+
             let path = Path::new(&name);
-            if path.is_dir() { 
-                self.expand_dir(&name)?;
-                return Ok(()) 
+            if path.is_dir() {
+                expand_path_in_tree_items(
+                    &mut self.tree_items, &name, &std::env::current_dir()?
+                )?;
+                return Ok(())
             }
             else {
                 self.open_file(&name).await?;
@@ -325,13 +358,82 @@ impl App {
 
         Ok(())
     }
-    
-    pub fn expand_dir(&mut self, target_path: &str) -> Result<()> {
-        let root_path = std::env::current_dir().unwrap();
-        expand_path_in_tree_items(&mut self.tree_items, target_path, &root_path)?;
+
+    async fn handle_search_event(&mut self, event: &Event) -> Result<()> {
+        if let Event::Key(key) = event {
+            if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('g') {
+                if self.search_panel.mode == SearchMode::GlobalSearch {
+                    self.search_panel.mode = SearchMode::Search;
+                } else {
+                    self.search_panel.mode = SearchMode::GlobalSearch;
+                }
+                if !self.search_panel.query.is_empty() {
+                    if self.search_panel.mode == SearchMode::GlobalSearch {
+                        let root_path = std::env::current_dir().unwrap();
+                        self.search_panel.global_search(&root_path);
+                    } else {
+                        let content = self.editor.get_content();
+                        self.search_panel.search(&content);
+                    }
+                }
+                return Ok(());
+            }
+
+            let action = self.search_panel.handle_input(*key);
+            match action {
+                SearchAction::UpdateSearch => {
+                    if self.search_panel.mode == SearchMode::GlobalSearch {
+                        // global search by files in current directory
+                        let root_path = std::env::current_dir().unwrap();
+                        self.search_panel.global_search(&root_path);
+                    } else {
+                        // local search in current file
+                        let content = self.editor.get_content();
+                        self.search_panel.search(&content);
+                    }
+                }
+                SearchAction::JumpTo(result) => {
+                    if let Some(file_path) = &result.file_path {
+                        // global search - open file and jump to position
+                        self.open_file(file_path).await?;
+                        let cursor_pos = result.match_start;
+                        self.editor.set_cursor(cursor_pos);
+                        self.editor.focus(&self.editor_area);
+
+                        let marks = vec![(result.match_start,result.match_end,"#585858")];
+                        self.editor.set_marks(marks);
+                    } else {
+                        // local search in current file
+                        let cursor_pos = result.match_start;
+                        self.editor.set_cursor(cursor_pos);
+                        self.editor.focus(&self.editor_area);
+                        let marks = vec![(result.match_start,result.match_end,"#585858")];
+                        self.editor.set_marks(marks);
+                    }
+                    self.left_panel_focused = true;
+                }
+                SearchAction::JumpToAndExit(result) => {
+                    if let Some(file_path) = &result.file_path {
+                        self.open_file(file_path).await?;
+                    }
+
+                    self.left_panel_mode = LeftPanelMode::Tree;
+                    let cursor_pos = result.match_start;
+                    self.editor.set_cursor(cursor_pos);
+                    self.editor.focus(&self.editor_area);
+                    self.left_panel_focused = false;
+                    self.editor.remove_marks();
+                }
+                SearchAction::Close => {
+                    self.left_panel_mode = LeftPanelMode::Tree;
+                    self.left_panel_focused = false;
+                }
+                SearchAction::None => {}
+            }
+        }
         Ok(())
     }
-    
+
     async fn handle_watch_event(&mut self, event: notify::Event) -> Result<()>{
         match event.kind {
             notify::EventKind::Modify(ModifyKind::Data(_)) => {
@@ -341,7 +443,7 @@ impl App {
                 }
                 let self_abs = abs_file(&self.filename);
                 let self_path = Path::new(&self_abs);
-                let is_need_self_update = event.paths.iter().any(|p| p == &self_path);                    
+                let is_need_self_update = event.paths.iter().any(|p| p == &self_path);
                 if is_need_self_update {
                     let content = fs::read_to_string(&self_path)?;
                     self.self_update = false;
@@ -365,7 +467,7 @@ impl App {
         let mut coder = self.coder.lock().await;
         coder.update(&PathBuf::from(filename), &content);
         self.watcher.add(path)?;
-        self.tree_focused = false;
+        self.left_panel_focused = false;
         Ok(())
     }
 
@@ -399,10 +501,10 @@ impl App {
 
         if edits.is_empty() { return Ok(()) }
 
-        // calculate changed ranges to visualize 
+        // calculate changed ranges to visualize
         let changed_ranges = compute_changed_ranges_normalized(&edits);
 
-        // map edits to ratatui-code-editor edit type 
+        // map edits to ratatui-code-editor edit type
         let editor_edits = edits.iter().map(|e| {
             let kind = match &e.kind {
                 Insert => EditKind::Insert { offset: e.start, text: e.text.clone() },
@@ -432,27 +534,28 @@ impl App {
 
         Ok(())
     }
+
 }
 
 fn is_save_pressed(key: KeyEvent) -> bool {
-    key.modifiers.contains(KeyModifiers::CONTROL) && 
+    key.modifiers.contains(KeyModifiers::CONTROL) &&
         key.code == KeyCode::Char('s')
 }
 
 fn is_autocomplete_pressed(key: KeyEvent) -> bool {
-    key.modifiers.contains(KeyModifiers::CONTROL) && 
+    key.modifiers.contains(KeyModifiers::CONTROL) &&
         key.code == KeyCode::Char(' ')
 }
 
 fn is_quit_pressed(key: KeyEvent) -> bool {
-    key.modifiers.contains(KeyModifiers::CONTROL) && 
+    key.modifiers.contains(KeyModifiers::CONTROL) &&
         key.code == KeyCode::Char('q')
 }
 
 fn save_to_file(content: &str, path: &str) -> Result<()> {
     let mut file = std::fs::File::create(path)?;
     file.write_all(content.as_bytes())?;
-    Ok(()) 
+    Ok(())
 }
 
 fn is_focused(mouse: &MouseEvent,area: Rect) -> bool {
@@ -468,96 +571,8 @@ fn rect_contains(rect: Rect, x: u16, y: u16) -> bool {
     y < rect.y + rect.height
 }
 
-pub fn build_tree_items(
-    path: &Path, root_path: &Path,
-) -> Vec<TreeItem<'static, String>> {
-    let mut folders = Vec::new();
-    let mut files = Vec::new();
-
-    if let Ok(entries) = fs::read_dir(path) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if is_ignored_path(&path) {
-                continue;
-            }
-
-            let rel_path = path.strip_prefix(root_path).unwrap_or(&path);
-            let label = rel_path.to_string_lossy().into_owned(); // "src/main.rs"
-            let name = path.file_name().unwrap().to_string_lossy().into_owned();
-
-            if path.is_dir() {
-                if let Ok(item) = TreeItem::new(label, name, vec![]) {
-                    folders.push(item);
-                }
-            } else {
-                files.push(TreeItem::new_leaf(label, name));
-            }
-        }
-    }
-
-    let mut items = Vec::with_capacity(folders.len() + files.len());
-    items.extend(folders);
-    items.extend(files);
-    items
-}
-
-pub fn build_initial_tree_items(root_path: &Path) -> Vec<TreeItem<'static, String>> {
-    let child_items = build_tree_items(root_path, root_path);
-    
-    // Create root tree item containing all children
-    let root_name = root_path.file_name()
-        .unwrap_or_else(|| std::ffi::OsStr::new("."))
-        .to_string_lossy()
-        .into_owned();
-    
-    let root_identifier = root_path.to_string_lossy().into_owned();
-    
-    let items = match TreeItem::new(root_identifier, root_name, child_items.clone()) {
-        Ok(root_item) => vec![root_item],
-        Err(_) => child_items,
-    };
-    items
-}
-
-pub fn expand_path_in_tree_items(
-    items: &mut [TreeItem<'static, String>],
-    target_path: &str,
-    root_path: &Path,
-) -> std::io::Result<bool> {
-    
-    for i in 0..items.len() {
-        let item = &mut items[i];
-        
-        let found = item.identifier() == target_path;
-        if found {
-            let full_path = root_path.join(target_path);
-            if full_path.is_dir() {
-                let children = build_tree_items(&full_path, root_path);
-                for child in children {
-                    let _ = item.add_child(child);
-                }
-                return Ok(true);
-            }
-        }
-
-        // recursively find and expand children
-        for child_idx in 0..item.children().len() {
-            if let Some(child) = item.child_mut(child_idx) {
-                let found = expand_path_in_tree_items(
-                    std::slice::from_mut(child), target_path, root_path
-                )?;
-                if found {
-                    return Ok(true);
-                }
-            }
-        }
-    }
-
-    Ok(false)
-}
-
 fn create_welcome_widget<'a>() -> ratatui::widgets::Paragraph<'a> {
     Paragraph::new(" Welcome to redai!")
         .style(Style::default().fg(Color::Reset))
         .wrap(Wrap { trim: false })
-} 
+}

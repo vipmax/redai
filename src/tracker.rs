@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use crate::diff::diff_without_unchanged;
 

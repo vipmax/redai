@@ -17,6 +17,8 @@ mod config;
 mod tracker;
 mod watcher;
 mod app;
+mod search;
+mod tree;
 
 use app::App;
 use config::Config;
@@ -51,9 +53,13 @@ async fn main() -> anyhow::Result<()> {
     let llm_client = LlmClient::new(&api_key, &base_url, &model);
 
     let app = App::new(&language, &content, &filename, llm_client);
-    app.run(terminal).await;
+    let result = app.run(terminal).await;
 
     restore();
+
+    if let Err(e) = result {
+        return Err(e);
+    }
 
     Ok(())
 }

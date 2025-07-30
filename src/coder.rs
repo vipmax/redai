@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use crate::llm::LlmClient;
-use crate::diff::{compute_text_edits, Edit, EditKind};
+use crate::diff::{compute_text_edits, Edit};
 use serde_json::json;
 use crate::prompts::*;
 use crate::utils::{byte_to_point, offset_to_byte};
@@ -175,7 +175,6 @@ impl Coder {
 mod tests {
     use super::*;
     use indoc::indoc;
-    use dotenv::dotenv;
 
     #[test]
     fn test_build_context_basic() {

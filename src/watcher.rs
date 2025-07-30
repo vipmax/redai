@@ -1,4 +1,4 @@
-use notify::{recommended_watcher, Watcher, RecursiveMode, event::ModifyKind};
+use notify::{recommended_watcher, Watcher, RecursiveMode};
 use std::path::Path;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Receiver;

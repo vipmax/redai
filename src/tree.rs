@@ -1,0 +1,92 @@
+
+use tui_tree_widget::{TreeItem};
+use std::path::Path;
+use crate::utils::is_ignored_path;
+
+pub fn build_tree_items(
+    path: &Path, root_path: &Path,
+) -> Vec<TreeItem<'static, String>> {
+    let mut folders = Vec::new();
+    let mut files = Vec::new();
+
+    if let Ok(entries) = std::fs::read_dir(path) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if is_ignored_path(&path) {
+                continue;
+            }
+
+            let rel_path = path.strip_prefix(root_path).unwrap_or(&path);
+            let label = rel_path.to_string_lossy().into_owned(); // "src/main.rs"
+            let name = path.file_name().unwrap().to_string_lossy().into_owned();
+
+            if path.is_dir() {
+                if let Ok(item) = TreeItem::new(label, name, vec![]) {
+                    folders.push(item);
+                }
+            } else {
+                files.push(TreeItem::new_leaf(label, name));
+            }
+        }
+    }
+
+    let mut items = Vec::with_capacity(folders.len() + files.len());
+    items.extend(folders);
+    items.extend(files);
+    items
+}
+
+pub fn build_initial_tree_items(root_path: &Path) -> Vec<TreeItem<'static, String>> {
+    let child_items = build_tree_items(root_path, root_path);
+
+    // Create root tree item containing all children
+    let root_name = root_path.file_name()
+        .unwrap_or_else(|| std::ffi::OsStr::new("."))
+        .to_string_lossy()
+        .into_owned();
+
+    let root_identifier = root_path.to_string_lossy().into_owned();
+
+    let items = match TreeItem::new(root_identifier, root_name, child_items.clone()) {
+        Ok(root_item) => vec![root_item],
+        Err(_) => child_items,
+    };
+    items
+}
+
+pub fn expand_path_in_tree_items(
+    items: &mut [TreeItem<'static, String>],
+    target_path: &str,
+    root_path: &Path,
+) -> std::io::Result<bool> {
+
+    for i in 0..items.len() {
+        let item = &mut items[i];
+
+        let found = item.identifier() == target_path;
+        if found {
+            let full_path = root_path.join(target_path);
+            if full_path.is_dir() {
+                let children = build_tree_items(&full_path, root_path);
+                for child in children {
+                    let _ = item.add_child(child);
+                }
+                return Ok(true);
+            }
+        }
+
+        // recursively find and expand children
+        for child_idx in 0..item.children().len() {
+            if let Some(child) = item.child_mut(child_idx) {
+                let found = expand_path_in_tree_items(
+                    std::slice::from_mut(child), target_path, root_path
+                )?;
+                if found {
+                    return Ok(true);
+                }
+            }
+        }
+    }
+
+    Ok(false)
+}

@@ -124,6 +124,11 @@ pub const DEFAULT_IGNORE_FILES: &[&str] = &[
     
     // Certificate and key files
     "*.pem", "*.key", "*.crt", "*.p12",
+
+    // Images and video
+    "*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp", "*.tiff", "*.webp",
+    "*.svg", "*.ico",
+    "*.mp4", "*.mov", "*.avi", "*.mkv", "*.webm", "*.flv", "*.wmv",
     
     // Specific files
     "coder.rs",
@@ -252,6 +257,26 @@ pub fn offset_to_byte(o: usize, s: &str) -> usize {
     byte_index
 }
 
+pub fn get_line(line_number: usize, text: &str) -> &str {
+    let mut line_start = 0;
+    let mut current_line = 0;
+
+    for (i, c) in text.char_indices() {
+        if c == '\n' {
+            if current_line == line_number {
+                return &text[line_start..i];
+            }
+            current_line += 1;
+            line_start = i + 1;
+        }
+    }
+
+    if current_line == line_number {
+        return &text[line_start..];
+    }
+
+    ""
+}
 
 #[cfg(test)]
 mod tests {
@@ -311,5 +336,25 @@ mod tests {
         
         let path = PathBuf::from("debug.log");
         assert!(is_ignored_path(&path));
+    }
+    
+    #[test]
+    fn test_get_line() {
+        let text = "\
+first line
+second line
+third line";
+
+        assert_eq!(get_line(0, text), "first line");
+        assert_eq!(get_line(1, text), "second line");
+        assert_eq!(get_line(2, text), "third line");
+        assert_eq!(get_line(3, text), ""); // out of bounds
+    }
+    
+    #[test]
+    fn test_get_line_empty_text() {
+        let text = "";
+        assert_eq!(get_line(0, text), "");
+        assert_eq!(get_line(1, text), "");
     }
 }
