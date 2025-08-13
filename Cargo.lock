@@ -1736,7 +1736,7 @@ dependencies = [
 
 [[package]]
 name = "redai"
-version = "0.0.1"
+version = "0.0.0"
 dependencies = [
  "anyhow",
  "async-openai",

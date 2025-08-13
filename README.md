@@ -16,7 +16,25 @@ redai combines a fast, modern TUI code editor with context-aware code completion
 - **Configurable**: Set your LLM provider, model, and API key via environment variables.
 
 ## Installation
+### From releases
 
+Linux:
+```bash
+curl -L https://github.com/vipmax/redai/releases/latest/download/redai-linux.tar.gz | tar -xz --overwrite
+sudo mv redai /usr/local/bin/
+sudo chmod +x /usr/local/bin/redai
+redai
+```
+
+Macos:
+```bash
+curl -L https://github.com/vipmax/redai/releases/latest/download/red-universal-apple-darwin.tar.gz | tar -xz --overwrite
+sudo mv redai /usr/local/bin/
+sudo chmod +x /usr/local/bin/redai
+redai
+```
+
+### From sources
 1. **Clone the repository:**
 
 ```sh
