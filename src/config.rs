@@ -17,7 +17,7 @@ impl Config {
             .unwrap_or_else(|_| "https://openrouter.ai/api/v1".to_string());
         
         let model = std::env::var("OPENROUTER_MODEL")
-            .unwrap_or_else(|_| "mistralai/devstral-medium-2507".to_string());
+            .unwrap_or_else(|_| "mistralai/codestral-2508".to_string());
 
         Ok(Self {
             api_key,

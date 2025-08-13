@@ -41,7 +41,7 @@ Create a `.env` file or export variables in your shell:
 ```
 OPENROUTER_API_KEY=your_openrouter_api_key
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1   # (optional, default shown)
-OPENROUTER_MODEL=mistralai/devstral-medium-2507     # (optional, default shown)
+OPENROUTER_MODEL=mistralai/codestral-2508     # (optional, default shown)
 ```
 
 ## Usage
@@ -65,6 +65,8 @@ Or just run `redai` to open the default file (`test.rs`).
   - `Ctrl+S` to save.
   - `Ctrl+Space` to trigger AI autocomplete/code edit at the cursor.
   - `Esc` to undo marks or quit.
+  - `Control + c` - copy 
+  - `Control + v` - paste  
 - **AI Code Editing:**
   - The editor sends code context and recent edits to the LLM.
   - The LLM responds with precise code changes, which are applied and visualized.

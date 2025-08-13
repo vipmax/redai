@@ -237,6 +237,9 @@ impl App {
 
     async fn handle_editor_event(&mut self, event: &Event) -> Result<()> {
         match event {
+            Event::Paste(paste) => {
+                self.editor.paste(paste)?;
+            }
             Event::Key(key) => {
                 // Handle search activation
                 if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('f') {

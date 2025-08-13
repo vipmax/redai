@@ -1,6 +1,7 @@
 use std::{io::stdout};
 use crossterm::{
-    event::{DisableMouseCapture, EnableMouseCapture},
+    event::{DisableMouseCapture, EnableMouseCapture, 
+        DisableBracketedPaste, EnableBracketedPaste},
     execute,
 };
 use std::env;
@@ -48,7 +49,7 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let terminal = ratatui::init();
-    execute!(stdout(), EnableMouseCapture)?;
+    execute!(stdout(), EnableMouseCapture, EnableBracketedPaste)?;
 
     let llm_client = LlmClient::new(&api_key, &base_url, &model);
 
@@ -66,8 +67,8 @@ async fn main() -> anyhow::Result<()> {
 
 fn restore() {
     ratatui::restore();
-    execute!(stdout(), DisableMouseCapture).unwrap();
-    execute!(stdout(), crossterm::cursor::Show).unwrap();
+    let _ = execute!(stdout(), DisableMouseCapture, DisableBracketedPaste);
+    let _ = execute!(stdout(), crossterm::cursor::Show);
 }
 
 fn set_panic_hook() {
