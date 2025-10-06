@@ -38,18 +38,30 @@ redai
 1. **Clone the repository:**
 
 ```sh
-git clone https://github.com/yourusername/redai.git
+git clone https://github.com/vipmax/redai.git
 cd redai
 ```
 
 2. **Install Rust (if not already):**
+```sh
 
-https://rustup.rs/
+# mac and linux:
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# windows:
+https://rust-lang.org/tools/install/
+```
 
 3. **Build the project:**
 
 ```sh
 cargo build --release
+
+# move to path
+sudo mv target/release/redai /usr/local/bin/
+sudo chmod +x /usr/local/bin/redai
+
+redai
 ```
 
 4. **Set up environment variables:**
@@ -64,13 +76,9 @@ OPENROUTER_MODEL=mistralai/codestral-2508     # (optional, default shown)
 
 ## Usage
 
-Run redai with a file to edit:
-
 ```sh
-cargo run --release -- path/to/your_file.rs
+redai 
 ```
-
-Or just run `redai` to open the default file (`test.rs`).
 
 ### Key Features
 
@@ -85,6 +93,8 @@ Or just run `redai` to open the default file (`test.rs`).
   - `Esc` to undo marks or quit.
   - `Control + c` - copy 
   - `Control + v` - paste  
+  - `Control + f` - file search  
+  - `Control + g` - global search  
 - **AI Code Editing:**
   - The editor sends code context and recent edits to the LLM.
   - The LLM responds with precise code changes, which are applied and visualized.

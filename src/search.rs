@@ -6,6 +6,7 @@ use ratatui::{
     Frame,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use regex::RegexBuilder;
 
 use crate::utils::{byte_to_point, get_line, is_ignored_path};
 
@@ -27,6 +28,12 @@ pub enum SearchAction {
     JumpToAndExit(SearchResult),
 }
 
+#[derive(PartialEq)]
+pub enum SearchMode {
+    Search,
+    GlobalSearch
+}
+
 pub struct SearchPanel {
     pub active: bool,
     pub query: String,
@@ -35,12 +42,6 @@ pub struct SearchPanel {
     pub results: Vec<SearchResult>,
     pub list_state: ListState,
     pub mode: SearchMode,
-}
-
-#[derive(PartialEq)]
-pub enum SearchMode {
-    Search,
-    GlobalSearch
 }
 
 impl SearchPanel {
@@ -132,37 +133,73 @@ impl SearchPanel {
     }
 
     pub fn search_matches(
-        &mut self, content: &str,
+        &self,
+        content: &str,
+        content_for_search: &str,
         search_query: &str,
         file_path: Option<String>
     ) -> Vec<SearchResult> {
-        let mut results = Vec::new();
+        if self.regex_mode {
+            // Regex path: iterate matches on original content (Unicode-aware)
+            let mut results = Vec::new();
+            let regex = RegexBuilder::new(search_query)
+                .case_insensitive(!self.case_sensitive)
+                .multi_line(true)
+                .unicode(true)
+                .build();
 
-        let mut start_byte = 0;
+            if let Ok(re) = regex {
+                for m in re.find_iter(content) {
+                    let match_start_byte = m.start();
+                    let match_end_byte = m.end();
 
-        while let Some(pos) = content[start_byte..].find(&search_query) {
-            let match_start_byte = start_byte + pos;
-            let match_end_byte = match_start_byte + search_query.len();
+                    let match_start_char = content[..match_start_byte].chars().count();
+                    let match_end_char = content[..match_end_byte].chars().count();
 
-            let match_start_char = content[..match_start_byte].chars().count();
-            let match_end_char = match_start_char + search_query.chars().count();
+                    let point = byte_to_point(match_start_byte, &content);
+                    let line = get_line(point.0, content).to_string();
 
-            let point = byte_to_point(match_start_byte, &content);
-            let line = get_line(point.0, content).to_string();
+                    results.push(SearchResult {
+                        line: point.0,
+                        column: point.1,
+                        match_start: match_start_char,
+                        match_end: match_end_char,
+                        line_content: line,
+                        file_path: file_path.clone(),
+                    });
+                }
+            }
 
-            results.push(SearchResult {
-                line: point.0,
-                column: point.1,
-                match_start: match_start_char,
-                match_end: match_end_char,
-                line_content: line,
-                file_path: file_path.clone(),
-            });
+            results
+        } else {
+            // Literal find path (with optional case-insensitivity via transformed view)
+            let mut results = Vec::new();
+            let mut start_byte = 0;
 
-            start_byte = match_end_byte;
+            while let Some(pos) = content_for_search[start_byte..].find(&search_query) {
+                let match_start_byte = start_byte + pos;
+                let match_end_byte = match_start_byte + search_query.len();
+
+                let match_start_char = content[..match_start_byte].chars().count();
+                let match_end_char = match_start_char + search_query.chars().count();
+
+                let point = byte_to_point(match_start_byte, &content);
+                let line = get_line(point.0, content).to_string();
+
+                results.push(SearchResult {
+                    line: point.0,
+                    column: point.1,
+                    match_start: match_start_char,
+                    match_end: match_end_char,
+                    line_content: line,
+                    file_path: file_path.clone(),
+                });
+
+                start_byte = match_end_byte;
+            }
+
+            results
         }
-
-        results
     }
 
     pub fn search(&mut self, content: &str) {
@@ -173,15 +210,21 @@ impl SearchPanel {
             return;
         }
 
-        let search_query = if self.case_sensitive {
+        let search_query = if self.case_sensitive { 
             self.query.clone()
-        } else {
+        } else { 
             self.query.to_lowercase()
         };
 
-        let results = self.search_matches(
-            &content, &search_query, None
-        );
+        let content_for_search_owned;
+        let content_for_search = if self.case_sensitive {
+            content
+        } else {
+            content_for_search_owned = content.to_lowercase();
+            &content_for_search_owned
+        };
+
+        let results = self.search_matches(&content, content_for_search, &search_query, None);
 
         self.results.extend(results);
 
@@ -198,11 +241,7 @@ impl SearchPanel {
             return;
         }
 
-        let search_query = if self.case_sensitive {
-            self.query.clone()
-        } else {
-            self.query.to_lowercase()
-        };
+        let search_query = if self.case_sensitive { self.query.clone() } else { self.query.to_lowercase() };
 
         if let Ok(entries) = std::fs::read_dir(root_path) {
             for entry in entries.flatten() {
@@ -245,7 +284,15 @@ impl SearchPanel {
         if let Ok(content) = std::fs::read_to_string(file_path) {
             let file_path_str = file_path.to_string_lossy().to_string();
 
-            let results = self.search_matches(&content, search_query, Some(file_path_str));
+            let content_for_search_owned;
+            let content_for_search = if self.case_sensitive {
+                content.as_str()
+            } else {
+                content_for_search_owned = content.to_lowercase();
+                &content_for_search_owned
+            };
+
+            let results = self.search_matches(&content, content_for_search, search_query, Some(file_path_str));
             self.results.extend(results);
 
             if !self.results.is_empty() {
@@ -363,5 +410,31 @@ impl SearchPanel {
             );
 
         frame.render_stateful_widget(results_list, chunks[3], &mut self.list_state);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_search_simple() {
+        let mut search_panel = SearchPanel::new();
+        search_panel.query = "let".to_string();
+        search_panel.search("let mut foo = 2;\nfoo *= 50;");
+        assert_eq!(search_panel.results.len(), 1);
+        assert_eq!(search_panel.results[0].line, 0);
+        assert_eq!(search_panel.results[0].column, 0);
+        assert_eq!(search_panel.results[0].match_start, 0);
+    }
+
+    #[test]
+    fn test_search_readme() {
+        let mut search_panel = SearchPanel::new();
+        search_panel.query = "Terminal".to_string();
+        let content = std::fs::read_to_string("README.md").unwrap();
+        search_panel.search(&content);
+
+        assert_eq!(search_panel.results.len(), 5);
     }
 }

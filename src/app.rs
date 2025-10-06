@@ -11,6 +11,7 @@ use ratatui::layout::{Layout, Constraint, Direction, Rect, Position};
 use ratatui::{DefaultTerminal, Frame};
 use ratatui::style::{Color, Modifier, Style};
 use ratatui_code_editor::editor::Editor;
+use ratatui_code_editor::selection::Selection;
 use ratatui_code_editor::theme::vesper;
 use ratatui_code_editor::utils::get_lang;
 use ratatui_code_editor::history::{EditKind};
@@ -46,10 +47,23 @@ pub enum LeftPanelMode {
     Search,
 }
 
+#[derive(Clone, Debug)]
+pub struct Fallback {
+    filename: String,
+    cursor: usize,
+    offsets: (usize, usize),
+    selection: Option<Selection>,
+}
+
+pub type Theme = Vec<(&'static str, &'static str)>;
+
 pub struct App {
     editor: Editor,
     editor_area: Rect,
     filename: String,
+    fallback: Option<Fallback>,
+    //static lifetime
+    theme: Theme,
     quit: bool,
     split_ratio: usize,
     is_resizing: bool,
@@ -72,13 +86,13 @@ impl App {
         language: &str, content: &str,
         filename: &str, llm_client: LlmClient
     ) -> Self {
+        let root_path = std::env::current_dir().unwrap();
         let theme = vesper();
-        let editor = Editor::new(language, content, theme);
+        let items = build_initial_tree_items(&root_path, &theme);
+        let editor = Editor::new(language, content, theme.clone());
         let mut coder = Coder::new(llm_client);
         coder.update(&PathBuf::from(filename), &content);
         let (tx, rx) = mpsc::channel(1);
-        let root_path = std::env::current_dir().unwrap();
-        let items = build_initial_tree_items(&root_path);
         let tree_focused = if filename.is_empty() { true } else { false };
         let watcher = FsWatcher::new();
 
@@ -93,6 +107,8 @@ impl App {
             editor,
             editor_area: Rect::default(),
             filename: filename.to_string(),
+            fallback: None,
+            theme: theme,
             coder: Arc::new(Mutex::new(coder)),
             autocomplete_handle: None,
             autocomplete_tx: tx,
@@ -243,17 +259,42 @@ impl App {
             Event::Key(key) => {
                 // Handle search activation
                 if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('f') {
+                    self.fallback = Some(Fallback {
+                        filename: self.filename.clone(),
+                        cursor: self.editor.get_cursor(),
+                        selection: self.editor.get_selection(),
+                        offsets: (self.editor.get_offset_y(), self.editor.get_offset_x()),
+                    });
                     self.search_panel.activate(SearchMode::Search);
                     self.left_panel_mode = LeftPanelMode::Search;
                     self.left_panel_focused = true;
+
+                    // if there is a selection, use it as the search query
+                    if let Some(q) = self.editor.get_selection_text() {
+                        self.search_panel.query = q;
+                        self.handle_search_event(event).await?;
+                    }
+
                     return Ok(());
                 }
 
                 // Handle global search activation
                 if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('g') {
+                    self.fallback = Some(Fallback {
+                        filename: self.filename.clone(),
+                        cursor: self.editor.get_cursor(),
+                        selection: self.editor.get_selection(),
+                        offsets: (self.editor.get_offset_y(), self.editor.get_offset_x()),
+                    });
                     self.search_panel.activate(SearchMode::GlobalSearch);
                     self.left_panel_mode = LeftPanelMode::Search;
                     self.left_panel_focused = true;
+
+                    // if there is a selection, use it as the search query
+                    if let Some(q) = self.editor.get_selection_text() {
+                        self.search_panel.query = q;
+                        self.handle_search_event(event).await?;
+                    }
                     return Ok(());
                 }
 
@@ -350,7 +391,7 @@ impl App {
             let path = Path::new(&name);
             if path.is_dir() {
                 expand_path_in_tree_items(
-                    &mut self.tree_items, &name, &std::env::current_dir()?
+                    &mut self.tree_items, &name, &std::env::current_dir()?, &self.theme
                 )?;
                 return Ok(())
             }
@@ -364,10 +405,13 @@ impl App {
 
     async fn handle_search_event(&mut self, event: &Event) -> Result<()> {
         if let Event::Key(key) = event {
-            if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('g') {
-                if self.search_panel.mode == SearchMode::GlobalSearch {
+            if key.modifiers.contains(KeyModifiers::CONTROL) &&
+                (key.code == KeyCode::Char('g') || key.code == KeyCode::Char('f')) {
+                
+                if key.code == KeyCode::Char('f') {
                     self.search_panel.mode = SearchMode::Search;
-                } else {
+                } 
+                if key.code == KeyCode::Char('g') {
                     self.search_panel.mode = SearchMode::GlobalSearch;
                 }
                 if !self.search_panel.query.is_empty() {
@@ -403,7 +447,7 @@ impl App {
                         self.editor.set_cursor(cursor_pos);
                         self.editor.focus(&self.editor_area);
 
-                        let marks = vec![(result.match_start,result.match_end,"#585858")];
+                        let marks = vec![(result.match_start,result.match_end, "#585858")];
                         self.editor.set_marks(marks);
                     } else {
                         // local search in current file
@@ -426,8 +470,19 @@ impl App {
                     self.editor.focus(&self.editor_area);
                     self.left_panel_focused = false;
                     self.editor.remove_marks();
+                    self.fallback = None;
                 }
                 SearchAction::Close => {
+                    if let Some(fallback) = self.fallback.take() {
+                        let _ = self.open_file(&fallback.filename).await;
+                        self.editor.set_cursor(fallback.cursor);
+                        if let Some(selection) = fallback.selection {
+                            self.editor.set_selection(selection);
+                        }
+                        self.editor.set_offset_y(fallback.offsets.0);
+                        self.editor.set_offset_x(fallback.offsets.1);
+                        self.editor.focus(&self.editor_area);
+                    }
                     self.left_panel_mode = LeftPanelMode::Tree;
                     self.left_panel_focused = false;
                 }
@@ -463,7 +518,10 @@ impl App {
         let path = Path::new(&filename);
         if path.is_dir() { return Ok(()) }
         let theme = vesper();
-        let language = get_lang(&filename);
+        let mut language = get_lang(&filename);
+        if language == "unknown" {
+            language = "shell".to_string();
+        }
         let content = fs::read_to_string(&filename)?;
         self.editor = Editor::new(&language, &content, theme);
         self.filename = filename.to_string();

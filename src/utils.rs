@@ -1,3 +1,7 @@
+use crate::app::Theme;
+use ratatui::style::Color;
+use ratatui_code_editor::utils::rgb;
+
 pub const DEFAULT_IGNORE_DIRS: &[&str] = &[
     // Version control and IDEs
     ".git", ".idea", ".vscode", ".vim", ".netrwhist", ".vs",
@@ -115,9 +119,6 @@ pub const DEFAULT_IGNORE_FILES: &[&str] = &[
     
     // Temporary and backup files
     "*.tmp", "*.swp", "*.swo", "*.bak", "*.orig", "*~",
-    
-    // Log files
-    "*.log",
     
     // Database files
     "*.db", "*.sqlite", "*.sqlite3",
@@ -276,6 +277,15 @@ pub fn get_line(line_number: usize, text: &str) -> &str {
     }
 
     ""
+}
+
+pub fn find_color(theme: &Theme, key: &str) -> Option<Color> {
+    theme.iter()
+        .find(|(k, _)| *k == key)
+        .map(|(_, v)| {
+            let (r, g, b) = rgb(*v);
+            Color::Rgb(r, g, b)
+        })
 }
 
 #[cfg(test)]

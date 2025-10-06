@@ -42,11 +42,15 @@ async fn main() -> anyhow::Result<()> {
        "".to_string()
     };
 
-    let (language, content) = if filename.is_empty() {
+    let (mut language, content) = if filename.is_empty() {
         (String::new(), String::new())
     } else {
         (get_lang(&filename), fs::read_to_string(&filename)?)
     };
+
+    if language == "unknown" {
+        language = "shell".to_string();
+    }
 
     let terminal = ratatui::init();
     execute!(stdout(), EnableMouseCapture, EnableBracketedPaste)?;
