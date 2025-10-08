@@ -1720,7 +1720,7 @@ dependencies = [
 [[package]]
 name = "ratatui-code-editor"
 version = "0.0.1"
-source = "git+https://github.com/vipmax/ratatui-code-editor#4c1fcdf307eae18cd13dc2c8977be9a0609a4beb"
+source = "git+https://github.com/vipmax/ratatui-code-editor#53263e27b4b27409a34a5e0edbf9ae67656df028"
 dependencies = [
  "anyhow",
  "arboard",
