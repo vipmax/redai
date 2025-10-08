@@ -14,7 +14,7 @@ use ratatui_code_editor::editor::Editor;
 use ratatui_code_editor::selection::Selection;
 use ratatui_code_editor::theme::vesper;
 use ratatui_code_editor::utils::get_lang;
-use ratatui_code_editor::history::{EditKind};
+use ratatui_code_editor::code::{EditKind, EditBatch, EditFallback};
 use ratatui::widgets::{Paragraph, Wrap};
 use std::fs;
 use std::io::Write;
@@ -571,11 +571,18 @@ impl App {
                 Insert => EditKind::Insert { offset: e.start, text: e.text.clone() },
                 Delete => EditKind::Remove { offset: e.start, text: e.text.clone() },
             };
-            ratatui_code_editor::history::Edit { kind }
+            ratatui_code_editor::code::Edit { kind }
         }).collect::<Vec<_>>();
 
+        // create an edit batch with fallback 
+        let editbatch = EditBatch {
+            edits: editor_edits, fallback: Some(EditFallback {
+                offset: self.editor.get_cursor(), selection: self.editor.get_selection()
+            })
+        };
+
         // apply edits to editor
-        self.editor.apply_edits(&editor_edits);
+        self.editor.apply_batch(&editbatch);
 
         // move cursor to the last of changed range
         if let Some(r) = changed_ranges.last() {

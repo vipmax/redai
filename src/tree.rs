@@ -2,12 +2,10 @@
 use tui_tree_widget::{TreeItem};
 use std::path::Path;
 use crate::utils::{find_color, is_ignored_path};
-use ratatui_code_editor::utils::rgb;
 use crate::app::Theme;
 use ratatui::{
-    style::{Color, Style},
-    text::{Line, Span},
-    widgets::Block,
+    style::{Style},
+    text::{Span},
 };
 
 
