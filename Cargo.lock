@@ -107,9 +107,9 @@ dependencies = [
 
 [[package]]
 name = "async-openai"
-version = "0.29.4"
+version = "0.29.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d5de7f9c36affd6a02a979417c96be2590ded76f4b95418366d720526ac365d4"
+checksum = "b08a5b643739686e5b231d2abd5450fb3d4dd8bd65994fb4b51758393db61cc0"
 dependencies = [
  "async-openai-macros",
  "backoff",
@@ -243,9 +243,9 @@ dependencies = [
 
 [[package]]
 name = "cc"
-version = "1.2.40"
+version = "1.2.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e1d05d92f4b1fd76aad469d46cdd858ca761576082cd37df81416691e50199fb"
+checksum = "ac9fe6cdbb24b6ade63616c0a0688e45bb56732262c158df3c0c4bea4ca47cb7"
 dependencies = [
  "find-msvc-tools",
  "shlex",
@@ -614,9 +614,9 @@ dependencies = [
 
 [[package]]
 name = "find-msvc-tools"
-version = "0.1.3"
+version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0399f9d26e5191ce32c498bebd31e7a3ceabc2745f0ac54af3f335126c3f24b3"
+checksum = "52051878f80a721bb68ebfbc930e07b65ba72f2da88968ea5c06fd6ca3d3a127"
 
 [[package]]
 name = "fnv"
@@ -1231,9 +1231,9 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "libc"
-version = "0.2.176"
+version = "0.2.177"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58f929b4d672ea937a23a1ab494143d968337a5f47e56d0815df1e0890ddf174"
+checksum = "2874a2af47a2325c2001a6e6fad9b16a53b802102b528163885171cf92b15976"
 
 [[package]]
 name = "linux-raw-sys"
@@ -1720,7 +1720,7 @@ dependencies = [
 [[package]]
 name = "ratatui-code-editor"
 version = "0.0.1"
-source = "git+https://github.com/vipmax/ratatui-code-editor#53263e27b4b27409a34a5e0edbf9ae67656df028"
+source = "git+https://github.com/vipmax/ratatui-code-editor#d4d555351423becc7ac65f908df466f8ee2f501c"
 dependencies = [
  "anyhow",
  "arboard",
@@ -1751,7 +1751,7 @@ dependencies = [
 
 [[package]]
 name = "redai"
-version = "0.0.0"
+version = "0.0.2"
 dependencies = [
  "anyhow",
  "async-openai",
@@ -2226,9 +2226,9 @@ dependencies = [
 
 [[package]]
 name = "stable_deref_trait"
-version = "1.2.0"
+version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
+checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
 name = "static_assertions"
