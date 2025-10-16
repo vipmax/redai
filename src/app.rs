@@ -254,7 +254,9 @@ impl App {
     async fn handle_editor_event(&mut self, event: &Event) -> Result<()> {
         match event {
             Event::Paste(paste) => {
-                self.editor.paste(paste)?;
+                self.editor.apply(ratatui_code_editor::actions::InsertText{ 
+                    text: paste.to_string()
+                });
             }
             Event::Key(key) => {
                 // Handle search activation
@@ -305,7 +307,7 @@ impl App {
 
                 if key.code == KeyCode::Esc && has_marks {
                     self.editor.remove_marks();
-                    self.editor.handle_undo();
+                    self.editor.apply(ratatui_code_editor::actions::Undo { });
                 } else if is_quit_pressed(*key) {
                     self.quit = true;
                 } else if is_autocomplete_pressed(*key) {
@@ -325,7 +327,7 @@ impl App {
                             self.editor.remove_marks();
                         } else {
                             self.editor.remove_marks();
-                            self.editor.handle_undo();
+                            self.editor.apply(ratatui_code_editor::actions::Undo { });
                             self.editor.input(*key, &self.editor_area)?;
                         }
                     } else {
@@ -477,7 +479,7 @@ impl App {
                         let _ = self.open_file(&fallback.filename).await;
                         self.editor.set_cursor(fallback.cursor);
                         if let Some(selection) = fallback.selection {
-                            self.editor.set_selection(selection);
+                            self.editor.set_selection(Some(selection));
                         }
                         self.editor.set_offset_y(fallback.offsets.0);
                         self.editor.set_offset_x(fallback.offsets.1);
