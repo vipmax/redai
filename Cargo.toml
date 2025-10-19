@@ -14,7 +14,7 @@ anyhow = "1.0"
 color-eyre = "0.6.5"
 crossterm = { version = "0.29", features = ["event-stream"] }
 ratatui = "0.29"
-ratatui-code-editor = "0.0.1"
+ratatui-code-editor = { git = "https://github.com/vipmax/ratatui-code-editor" }
 tokio = { version = "1", features = ["full"] }
 tokio-stream = "0.1.17"
 tokio-util = "0.7.15"

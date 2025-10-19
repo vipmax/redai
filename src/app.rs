@@ -25,6 +25,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 use tui_tree_widget::{Tree, TreeItem, TreeState};
 use std::path::{Path};
+use std::collections::HashMap;
 
 use crate::diff::compute_changed_ranges_normalized;
 use crate::coder::Coder;
@@ -61,8 +62,8 @@ pub struct App {
     editor: Editor,
     editor_area: Rect,
     filename: String,
+    opened_editors: HashMap<String, Editor>,
     fallback: Option<Fallback>,
-    //static lifetime
     theme: Theme,
     quit: bool,
     split_ratio: usize,
@@ -105,6 +106,7 @@ impl App {
         Self {
             quit: false,
             editor,
+            opened_editors: HashMap::new(),
             editor_area: Rect::default(),
             filename: filename.to_string(),
             fallback: None,
@@ -187,7 +189,9 @@ impl App {
         }
 
         if self.filename.is_empty() {
-            let welcome = create_welcome_widget();
+            let welcome = Paragraph::new(" Welcome to redai!")
+                .style(Style::default().fg(Color::Reset))
+                .wrap(Wrap { trim: false });
             frame.render_widget(welcome, self.editor_area);
         } else {
             frame.render_widget(&self.editor, self.editor_area);
@@ -516,20 +520,39 @@ impl App {
     }
 
     pub async fn open_file(&mut self, filename: &str) -> Result<()> {
-        if self.filename == filename { return Ok(()) }
-        let path = Path::new(&filename);
-        if path.is_dir() { return Ok(()) }
-        let theme = vesper();
-        let mut language = get_lang(&filename);
-        if language == "unknown" {
-            language = "shell".to_string();
+        if self.filename == filename || Path::new(filename).is_dir() { 
+            return Ok(()) 
         }
-        let content = fs::read_to_string(&filename)?;
-        self.editor = Editor::new(&language, &content, theme);
-        self.filename = filename.to_string();
+    
+        // get or create editor for filename
+        let mut new_editor = match self.opened_editors.remove(filename) {
+            Some(ed) => ed,
+            None => {
+                let theme = vesper();
+                let mut lang = get_lang(filename);
+                if lang == "unknown" {
+                    lang = "shell".to_string();
+                }
+                let content = fs::read_to_string(filename)?;
+                Editor::new(&lang, &content, theme)
+            }
+        };
+    
+        // swap with current, save old if existed
+        if !self.filename.is_empty() {
+            std::mem::swap(&mut self.editor, &mut new_editor);
+            self.opened_editors.insert(self.filename.clone(), new_editor);
+        } else {
+            self.editor = new_editor;
+        }
+    
+        // update coder and state
+        let content = self.editor.get_content();
         let mut coder = self.coder.lock().await;
         coder.update(&PathBuf::from(filename), &content);
-        self.watcher.add(path)?;
+    
+        self.filename = filename.to_string();
+        self.watcher.add(Path::new(filename))?;
         self.left_panel_focused = false;
         Ok(())
     }
@@ -643,10 +666,4 @@ fn rect_contains(rect: Rect, x: u16, y: u16) -> bool {
     x < rect.x + rect.width &&
     y >= rect.y &&
     y < rect.y + rect.height
-}
-
-fn create_welcome_widget<'a>() -> ratatui::widgets::Paragraph<'a> {
-    Paragraph::new(" Welcome to redai!")
-        .style(Style::default().fg(Color::Reset))
-        .wrap(Wrap { trim: false })
 }
