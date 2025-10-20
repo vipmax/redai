@@ -1,6 +1,6 @@
 [package]
 name = "redai"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2024"
 
 [profile.release]
@@ -24,7 +24,7 @@ log = "0.4"
 env_logger = "0.11"
 similar = "2.7.0"
 imara-diff = "0.2"
-async-openai = { version = "0.29", features = ["byot"] }
+async-openai = { version = "0.30", features = ["byot"] }
 dotenv = "0.15.0"
 indoc = "2.0.6"
 tui-tree-widget = "0.23"
