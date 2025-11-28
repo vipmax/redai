@@ -410,90 +410,127 @@ impl App {
     }
 
     async fn handle_search_event(&mut self, event: &Event) -> Result<()> {
-        if let Event::Key(key) = event {
-            if key.modifiers.contains(KeyModifiers::CONTROL) &&
-                (key.code == KeyCode::Char('g') || key.code == KeyCode::Char('f')) {
-                
-                if key.code == KeyCode::Char('f') {
-                    self.search_panel.mode = SearchMode::Search;
-                } 
-                if key.code == KeyCode::Char('g') {
-                    self.search_panel.mode = SearchMode::GlobalSearch;
-                }
-                if !self.search_panel.query.is_empty() {
-                    if self.search_panel.mode == SearchMode::GlobalSearch {
-                        let root_path = std::env::current_dir().unwrap();
-                        self.search_panel.global_search(&root_path);
-                    } else {
-                        let content = self.editor.get_content();
-                        self.search_panel.search(&content);
-                    }
-                }
-                return Ok(());
+        match event {
+            Event::Paste(paste) => {
+                self.search_panel.query.push_str(&paste.to_string());
+                let action = if self.search_panel.mode == SearchMode::GlobalSearch {
+                    SearchAction::None
+                } else {
+                    SearchAction::UpdateSearch
+                };
+                self.process_search_action(action).await?;
             }
-
-            let action = self.search_panel.handle_input(*key);
-            match action {
-                SearchAction::UpdateSearch => {
-                    if self.search_panel.mode == SearchMode::GlobalSearch {
-                        // global search by files in current directory
-                        let root_path = std::env::current_dir().unwrap();
-                        self.search_panel.global_search(&root_path);
-                    } else {
-                        // local search in current file
-                        let content = self.editor.get_content();
-                        self.search_panel.search(&content);
+            Event::Key(key) => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) &&
+                    (key.code == KeyCode::Char('g') || key.code == KeyCode::Char('f')) {
+                    
+                    if key.code == KeyCode::Char('f') {
+                        self.search_panel.mode = SearchMode::Search;
+                    } 
+                    if key.code == KeyCode::Char('g') {
+                        self.search_panel.mode = SearchMode::GlobalSearch;
                     }
+                    if !self.search_panel.query.is_empty() {
+                        if self.search_panel.mode == SearchMode::GlobalSearch {
+                            let root_path = std::env::current_dir()?;
+                            self.search_panel.global_search(&root_path);
+                        } else {
+                            let content = self.editor.get_content();
+                            self.search_panel.search(&content);
+                        }
+                    }
+                    return Ok(());
                 }
-                SearchAction::JumpTo(result) => {
-                    if let Some(file_path) = &result.file_path {
-                        // global search - open file and jump to position
-                        self.open_file(file_path).await?;
-                        let cursor_pos = result.match_start;
-                        self.editor.set_cursor(cursor_pos);
-                        self.editor.focus(&self.editor_area);
 
-                        let marks = vec![(result.match_start,result.match_end, "#585858")];
-                        self.editor.set_marks(marks);
-                    } else {
-                        // local search in current file
-                        let cursor_pos = result.match_start;
-                        self.editor.set_cursor(cursor_pos);
-                        self.editor.focus(&self.editor_area);
-                        let marks = vec![(result.match_start,result.match_end,"#585858")];
-                        self.editor.set_marks(marks);
+                let action = self.search_panel.handle_input(*key, self.tree_area);
+                self.process_search_action(action).await?;
+            }
+            Event::Mouse(mouse) => {
+                match mouse.kind {
+                    crossterm::event::MouseEventKind::Down(_) => {
+                        let action = self.search_panel.handle_mouse_click(mouse, self.tree_area);
+                        self.process_search_action(action).await?;
                     }
-                    self.left_panel_focused = true;
+                    crossterm::event::MouseEventKind::ScrollDown => {
+                        self.search_panel.scroll_down(self.tree_area);
+                    }
+                    crossterm::event::MouseEventKind::ScrollUp => {
+                        self.search_panel.scroll_up();
+                    }
+                    _ => {}
                 }
-                SearchAction::JumpToAndExit(result) => {
-                    if let Some(file_path) = &result.file_path {
-                        self.open_file(file_path).await?;
-                    }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
 
-                    self.left_panel_mode = LeftPanelMode::Tree;
+    async fn process_search_action(&mut self, action: SearchAction) -> Result<()> {
+        match action {
+            SearchAction::UpdateSearch => {
+                if self.search_panel.mode == SearchMode::GlobalSearch {
+                    // global search by files in current directory
+                    let root_path = std::env::current_dir()?;
+                    self.search_panel.global_search(&root_path);
+                } else {
+                    // local search in current file
+                    let content = self.editor.get_content();
+                    self.search_panel.search(&content);
+                }
+            }
+            SearchAction::Clear => {
+                self.search_panel.results.clear();
+                self.search_panel.selected = None;
+                self.search_panel.scroll_offset = 0;
+            }
+            SearchAction::JumpTo(result) => {
+                if let Some(file_path) = &result.file_path {
+                    // global search - open file and jump to position
+                    self.open_file(file_path).await?;
                     let cursor_pos = result.match_start;
                     self.editor.set_cursor(cursor_pos);
                     self.editor.focus(&self.editor_area);
-                    self.left_panel_focused = false;
-                    self.editor.remove_marks();
-                    self.fallback = None;
+
+                    let marks = vec![(result.match_start,result.match_end, "#585858")];
+                    self.editor.set_marks(marks);
+                } else {
+                    // local search in current file
+                    let cursor_pos = result.match_start;
+                    self.editor.set_cursor(cursor_pos);
+                    self.editor.focus(&self.editor_area);
+                    let marks = vec![(result.match_start,result.match_end,"#585858")];
+                    self.editor.set_marks(marks);
                 }
-                SearchAction::Close => {
-                    if let Some(fallback) = self.fallback.take() {
-                        let _ = self.open_file(&fallback.filename).await;
-                        self.editor.set_cursor(fallback.cursor);
-                        if let Some(selection) = fallback.selection {
-                            self.editor.set_selection(Some(selection));
-                        }
-                        self.editor.set_offset_y(fallback.offsets.0);
-                        self.editor.set_offset_x(fallback.offsets.1);
-                        self.editor.focus(&self.editor_area);
-                    }
-                    self.left_panel_mode = LeftPanelMode::Tree;
-                    self.left_panel_focused = false;
-                }
-                SearchAction::None => {}
+                self.left_panel_focused = true;
             }
+            SearchAction::JumpToAndExit(result) => {
+                if let Some(file_path) = &result.file_path {
+                    self.open_file(file_path).await?;
+                }
+
+                self.left_panel_mode = LeftPanelMode::Tree;
+                let cursor_pos = result.match_start;
+                self.editor.set_cursor(cursor_pos);
+                self.editor.focus(&self.editor_area);
+                self.left_panel_focused = false;
+                self.editor.remove_marks();
+                self.fallback = None;
+            }
+            SearchAction::Close => {
+                if let Some(fallback) = self.fallback.take() {
+                    let _ = self.open_file(&fallback.filename).await;
+                    self.editor.set_cursor(fallback.cursor);
+                    if let Some(selection) = fallback.selection {
+                        self.editor.set_selection(Some(selection));
+                    }
+                    self.editor.set_offset_y(fallback.offsets.0);
+                    self.editor.set_offset_x(fallback.offsets.1);
+                    self.editor.focus(&self.editor_area);
+                }
+                self.left_panel_mode = LeftPanelMode::Tree;
+                self.left_panel_focused = false;
+            }
+            SearchAction::None => {}
         }
         Ok(())
     }

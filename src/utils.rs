@@ -2,137 +2,34 @@ use crate::app::Theme;
 use ratatui::style::Color;
 use ratatui_code_editor::utils::rgb;
 
-pub const DEFAULT_IGNORE_DIRS: &[&str] = &[
-    // Version control and IDEs
-    ".git", ".idea", ".vscode", ".vim", ".netrwhist", ".vs",
-    
-    // Build artifacts and output directories
-    "node_modules", "dist", "target", "build", "out", "bin", "obj",
-    
+pub const DEFAULT_IGNORE_DIRS: &[&str] = &[    
     // Python
-    "__pycache__", ".pytest_cache", ".mypy_cache", ".tox", 
-    ".coverage", ".venv", "venv", "env",
-    
+    "__pycache__", ".pytest_cache",
+];
+
+// Directories that should be ignored during search (even if shown in tree)
+pub const SEARCH_IGNORE_DIRS: &[&str] = &[
+    // Build artifacts and output directories
+    "target", "node_modules", "dist", "build", "out", "bin", "obj",
+    // Version control
+    ".git",
+    // Python
+    ".venv", "venv", "env", ".mypy_cache", ".tox",
     // JavaScript/TypeScript
-    ".next", ".nuxt", ".output", "coverage", ".nyc_output",
-    
+    ".next", ".nuxt", ".output", "coverage",
     // Java
     ".gradle", ".m2", "classes",
-    
-    // .NET
-    "packages",
-    
-    // Ruby
-    ".bundle", "vendor",
-    
-    // Go
-    "vendor",
-    
     // System files
-    ".DS_Store", "Thumbs.db", "desktop.ini",
-    
-    // Temporary and cache files
-    "tmp", "temp", ".tmp", ".cache", "cache",
-    
-    // Logs
-    "logs", "log",
-    
-    // Documentation builds
-    "docs/_build", "site", "_site",
-    
-    // Cloud and DevOps
-    ".terraform", ".terragrunt-cache", ".pulumi", 
-    ".vagrant", ".docker", ".kube", ".minikube",
-    ".helm", ".serverless",
-    
-    // CI/CD
-    ".github", ".gitlab-ci", ".circleci", ".buildkite",
-    ".jenkins", ".azure-pipelines",
-    
-    // Mobile development
-    ".expo", ".expo-shared", "ios/build", "android/build",
-    "android/.gradle", "ios/Pods", "ios/DerivedData",
-    ".flutter-plugins", ".flutter-plugins-dependencies",
-    
-    // Game development
-    "Library", "Temp", "Logs", "MemoryCaptures",
-    "Builds", "UserSettings",
-    
-    // Additional languages
-    ".stack-work", ".cabal-sandbox", // Haskell
-    "_build", ".merlin", // OCaml
-    ".eunit", ".rebar", ".rebar3", // Erlang
-    ".mix", "deps", // Elixir
-    ".dart_tool", // Dart
-    ".pio", ".platformio", // PlatformIO
-    
-    // Scientific computing
-    ".ipynb_checkpoints", ".spyderproject", ".spyproject",
-    ".RData", ".Rhistory", ".Rproj.user",
-    
-    // Database files
-    "data", "db",
-    
-    // Web frameworks
-    ".svelte-kit", ".routify", ".sapper", 
-    ".astro", ".solid", ".qwik",
-    
-    // Legacy VCS
-    ".bzr", ".hg", ".svn", "CVS", "SCCS",
-    
-    // Tool caches
-    ".eslintcache", ".stylelintcache",
-    
-    // Backup files
-    ".backup", "backup", "backups",
-    
+    ".DS_Store",
 ];
 
 pub const DEFAULT_IGNORE_FILES: &[&str] = &[
     // System files
     ".DS_Store", "Thumbs.db", "desktop.ini",
-    
-    // Environment and config
-    ".env", ".env.local", ".env.development", ".env.production",
-    ".envrc", ".direnv",
-    
-    // Lock files
-    "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
-    "Cargo.lock", "Pipfile.lock", "poetry.lock",
-    "composer.lock", "Gemfile.lock",
-    
-    // Git files
-    ".gitignore", ".gitattributes", ".gitmodules",
-    
-    // IDE and editor files
-    ".vimrc", ".editorconfig", ".clang-format",
-    
-    // Build and dependency files
-    "Makefile", "CMakeLists.txt", "meson.build",
-    "requirements.txt", "setup.py", "pyproject.toml",
-    "package.json", "tsconfig.json", "webpack.config.js",
-    "Dockerfile", "docker-compose.yml", "docker-compose.yaml",
-    
-    // CI/CD files
-    ".travis.yml", ".gitlab-ci.yml", "appveyor.yml",
-    "azure-pipelines.yml", "buildspec.yml",
-    
-    // Temporary and backup files
-    "*.tmp", "*.swp", "*.swo", "*.bak", "*.orig", "*~",
-    
-    // Database files
-    "*.db", "*.sqlite", "*.sqlite3",
-    
-    // Certificate and key files
-    "*.pem", "*.key", "*.crt", "*.p12",
-
     // Images and video
     "*.png", "*.jpg", "*.jpeg", "*.gif", "*.bmp", "*.tiff", "*.webp",
     "*.svg", "*.ico",
     "*.mp4", "*.mov", "*.avi", "*.mkv", "*.webm", "*.flv", "*.wmv",
-    
-    // Specific files
-    "coder.rs",
 ];
 
 /// Get ignore directories with support for environment variable extension
@@ -206,6 +103,52 @@ pub fn is_ignored_path(path: &std::path::PathBuf) -> bool {
     if let Some(file_name) = path.file_name() {
         if let Some(file_name_str) = file_name.to_str() {
             return is_ignored_file(file_name_str);
+        }
+    }
+    
+    false
+}
+
+/// Checks if a directory should be ignored during search
+pub fn is_search_ignored_dir(path: &std::path::Path) -> bool {
+    path.iter()
+        .any(|p| 
+            SEARCH_IGNORE_DIRS.contains(&p.to_string_lossy().as_ref())
+        )
+}
+
+/// Checks if a file should be skipped during search (too large or binary)
+pub fn should_skip_file_for_search(path: &std::path::Path) -> bool {
+    // Check file size (skip files larger than 10MB)
+    const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024; // 10MB
+    
+    if let Ok(metadata) = std::fs::metadata(path) {
+        if metadata.len() > MAX_FILE_SIZE {
+            return true;
+        }
+    }
+    
+    // Check if file is binary by reading first 512 bytes
+    if let Ok(mut file) = std::fs::File::open(path) {
+        use std::io::Read;
+        let mut buffer = vec![0u8; 512];
+        if let Ok(size) = file.read(&mut buffer) {
+            // Check for null bytes or high percentage of non-printable characters
+            let null_count = buffer[..size].iter().filter(|&&b| b == 0).count();
+            if null_count > 0 {
+                return true; // Binary file
+            }
+            
+            // Check if it's valid UTF-8
+            if std::str::from_utf8(&buffer[..size]).is_err() {
+                // If not valid UTF-8, check if it's mostly non-printable
+                let non_printable = buffer[..size].iter()
+                    .filter(|&&b| !(b >= 32 && b < 127) && b != 9 && b != 10 && b != 13)
+                    .count();
+                if non_printable as f64 / size as f64 > 0.3 {
+                    return true; // Likely binary
+                }
+            }
         }
     }
     
@@ -310,32 +253,37 @@ mod tests {
     
     #[test]
     fn test_is_ignored_dir() {
-        let path = PathBuf::from("src/node_modules/package");
+        let path = PathBuf::from("src/__pycache__/package");
+        assert!(is_ignored_dir(&path));
+        
+        let path = PathBuf::from("src/.pytest_cache/module");
         assert!(is_ignored_dir(&path));
         
         let path = PathBuf::from("src/main.rs");
         assert!(!is_ignored_dir(&path));
         
-        let path = PathBuf::from(".git/config");
-        assert!(is_ignored_dir(&path));
+        let path = PathBuf::from("src/node_modules/package");
+        assert!(!is_ignored_dir(&path)); // No longer ignored in tree
     }
     
     #[test]
     fn test_is_ignored_file() {
         assert!(is_ignored_file(".DS_Store"));
-        assert!(is_ignored_file("package-lock.json"));
-        assert!(is_ignored_file("app.log"));
-        assert!(is_ignored_file("data.db"));
-        assert!(is_ignored_file("temp.tmp"));
+        assert!(is_ignored_file("Thumbs.db"));
+        assert!(is_ignored_file("desktop.ini"));
+        assert!(is_ignored_file("image.png"));
+        assert!(is_ignored_file("photo.jpg"));
+        assert!(is_ignored_file("video.mp4"));
         
         assert!(!is_ignored_file("main.rs"));
         assert!(!is_ignored_file("index.html"));
         assert!(!is_ignored_file("config.json"));
+        assert!(!is_ignored_file("package-lock.json")); // No longer ignored
     }
     
     #[test]
     fn test_is_ignored_path() {
-        let path = PathBuf::from("src/node_modules/package.json");
+        let path = PathBuf::from("src/__pycache__/module.pyc");
         assert!(is_ignored_path(&path));
         
         let path = PathBuf::from("src/.DS_Store");
@@ -344,8 +292,26 @@ mod tests {
         let path = PathBuf::from("src/main.rs");
         assert!(!is_ignored_path(&path));
         
-        let path = PathBuf::from("debug.log");
+        let path = PathBuf::from("image.png");
         assert!(is_ignored_path(&path));
+        
+        let path = PathBuf::from("src/node_modules/package.json");
+        assert!(!is_ignored_path(&path)); // No longer ignored in tree
+    }
+    
+    #[test]
+    fn test_is_search_ignored_dir() {
+        let path = PathBuf::from("target/debug");
+        assert!(is_search_ignored_dir(&path.as_path()));
+        
+        let path = PathBuf::from("node_modules/package");
+        assert!(is_search_ignored_dir(&path.as_path()));
+        
+        let path = PathBuf::from(".git/config");
+        assert!(is_search_ignored_dir(&path.as_path()));
+        
+        let path = PathBuf::from("src/main.rs");
+        assert!(!is_search_ignored_dir(&path.as_path()));
     }
     
     #[test]
