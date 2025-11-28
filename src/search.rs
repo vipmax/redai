@@ -295,12 +295,12 @@ impl SearchPanel {
         let search_query = if self.case_sensitive { self.query.clone() } 
             else { self.query.to_lowercase() };
 
-        // Сначала собираем список всех файлов
+        // First, collect a list of all files
         let mut files = Vec::new();
         self.collect_files(root_path, &mut files);
         let files_count = files.len();
 
-        // Параллельный поиск по всем файлам с использованием rayon
+        // Parallel search across all files using rayon
         let case_sensitive = self.case_sensitive;
         let regex_mode = self.regex_mode;
         
