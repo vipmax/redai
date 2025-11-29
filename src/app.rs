@@ -585,13 +585,76 @@ impl App {
     
         // update coder and state
         let content = self.editor.get_content();
-        let mut coder = self.coder.lock().await;
-        coder.update(&PathBuf::from(filename), &content);
+        {
+            let mut coder = self.coder.lock().await;
+            coder.update(&PathBuf::from(filename), &content);
+        }
     
         self.filename = filename.to_string();
         self.watcher.add(Path::new(filename))?;
+        
+        self.open_file_in_tree(filename);
+        
         self.left_panel_focused = false;
         Ok(())
+    }
+    
+    pub fn open_file_in_tree(&mut self, filename: &str) {
+        let root_path = match std::env::current_dir() {
+            Ok(p) => p,
+            Err(_) => return,
+        };
+
+        // Get absolute path of the file
+        let file_path = Path::new(filename);
+        let abs_file_path = if file_path.is_absolute() {
+            file_path.to_path_buf()
+        } else {
+            root_path.join(file_path)
+        };
+
+        // Verify file is within root
+        if !abs_file_path.starts_with(&root_path) {
+            return; // File is outside root, skip
+        }
+
+        // Build path from root to file using absolute paths
+        let root_id = root_path.to_string_lossy().into_owned();
+        let mut open_path = vec![root_id.clone()];
+        let mut select_path = vec![root_id];
+
+        // Build path by traversing from root to file's parent directory
+        let mut current_path = root_path.clone();
+        if let Some(rel_path) = abs_file_path.parent().and_then(|p| p.strip_prefix(&root_path).ok()) {
+            for component in rel_path.iter() {
+                current_path = current_path.join(component);
+                let dir_id = current_path.to_string_lossy().into_owned();
+
+                // Expand this directory in tree
+                let _ = expand_path_in_tree_items(
+                    &mut self.tree_items,
+                    &dir_id,
+                    &root_path,
+                    &self.theme,
+                );
+
+                open_path.push(dir_id.clone());
+                select_path.push(dir_id);
+            }
+        }
+
+        // Add the file itself
+        let file_id = abs_file_path.to_string_lossy().into_owned();
+        select_path.push(file_id);
+
+        // Open all parent directories and select the file
+        // Open each incremental path from the root to the file to expand all parent directories.
+        for i in 0..open_path.len() {
+            let sub_path = open_path[0..=i].to_vec();
+            self.tree_state.open(sub_path);
+        }
+        // self.tree_state.open(open_path);
+        self.tree_state.select(select_path);
     }
 
     fn spawn_autocomplete_task(&mut self) {

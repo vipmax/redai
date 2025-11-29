@@ -57,7 +57,12 @@ async fn main() -> anyhow::Result<()> {
 
     let llm_client = LlmClient::new(&api_key, &base_url, &model);
 
-    let app = App::new(&language, &content, &filename, llm_client);
+    let mut app = App::new(&language, &content, &filename, llm_client);
+
+    if !filename.is_empty() {
+        app.open_file_in_tree(&filename);
+    }
+    
     let result = app.run(terminal).await;
 
     restore();

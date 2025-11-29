@@ -23,20 +23,19 @@ pub fn build_tree_items(
                 continue;
             }
 
-            let rel_path = path.strip_prefix(root_path).unwrap_or(&path);
-            let label = rel_path.to_string_lossy().into_owned();
             let name = path.file_name().unwrap().to_string_lossy().into_owned();
+            let abs_path = path.to_string_lossy().into_owned();
 
             if path.is_dir() {
                 let color = find_color(theme, "type").unwrap_or_default();
                 let name = Span::styled(name, Style::default().fg(color));
-                if let Ok(item) = TreeItem::new(label, name, vec![]) {
+                if let Ok(item) = TreeItem::new(abs_path, name, vec![]) {
                     folders.push(item);
                 }
             } else {
                 let color = find_color(theme, "variable").unwrap_or_default();
                 let name = Span::styled(name, Style::default().fg(color));
-                files.push(TreeItem::new_leaf(label, name));
+                files.push(TreeItem::new_leaf(abs_path, name));
             }
         }
     }
@@ -80,9 +79,10 @@ pub fn expand_path_in_tree_items(
 
         let found = item.identifier() == target_path;
         if found {
-            let full_path = root_path.join(target_path);
+            // target_path is now an absolute path, use it directly
+            let full_path = Path::new(target_path);
             if full_path.is_dir() {
-                let children = build_tree_items(&full_path, root_path, theme);
+                let children = build_tree_items(full_path, root_path, theme);
                 for child in children {
                     let _ = item.add_child(child);
                 }
