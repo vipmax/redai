@@ -1,5 +1,5 @@
-use std::time::{Duration, Instant};
 use crate::diff::diff_without_unchanged;
+use std::time::{Duration, Instant};
 
 pub struct Snapshot {
     pub timestamp: Instant,
@@ -63,13 +63,11 @@ impl Tracker {
         let maybe_oldest = self.oldest();
         let maybe_last = self.snapshots.last();
         match (maybe_oldest, maybe_last) {
-            (Some(prev), Some(latest)) => {
-                diff_without_unchanged(&prev, &latest.content)
-            }
+            (Some(prev), Some(latest)) => diff_without_unchanged(&prev, &latest.content),
             _ => String::new(),
         }
     }
-    
+
     pub fn snapshots(&self) -> &Vec<Snapshot> {
         &self.snapshots
     }

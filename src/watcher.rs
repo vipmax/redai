@@ -1,4 +1,4 @@
-use notify::{recommended_watcher, Watcher, RecursiveMode};
+use notify::{RecursiveMode, Watcher, recommended_watcher};
 use std::path::Path;
 use tokio::sync::mpsc;
 use tokio::sync::mpsc::Receiver;
@@ -14,7 +14,8 @@ impl FsWatcher {
 
         let watcher = recommended_watcher(move |res| {
             let _ = watch_tx.blocking_send(res);
-        }).unwrap();
+        })
+        .expect("Failed to create watcher");
 
         Self { watcher, watch_rx }
     }

@@ -1,25 +1,24 @@
-use std::{io::stdout};
 use crossterm::{
-    event::{DisableMouseCapture, EnableMouseCapture, 
-        DisableBracketedPaste, EnableBracketedPaste},
+    event::{DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture},
     execute,
 };
-use std::env;
-use std::fs;
 use dotenv::dotenv;
 use ratatui_code_editor::utils::get_lang;
+use std::env;
+use std::fs;
+use std::io::stdout;
 
-mod utils;
+mod app;
+mod coder;
+mod config;
 mod diff;
 mod llm;
 mod prompts;
-mod coder;
-mod config;
-mod tracker;
-mod watcher;
-mod app;
 mod search;
+mod tracker;
 mod tree;
+mod utils;
+mod watcher;
 
 use app::App;
 use config::Config;
@@ -39,7 +38,7 @@ async fn main() -> anyhow::Result<()> {
     let filename = if args.len() > 1 {
         args[1].clone()
     } else {
-       "".to_string()
+        "".to_string()
     };
 
     let (mut language, content) = if filename.is_empty() {
@@ -62,7 +61,7 @@ async fn main() -> anyhow::Result<()> {
     if !filename.is_empty() {
         app.open_file_in_tree(&filename);
     }
-    
+
     let result = app.run(terminal).await;
 
     restore();

@@ -1,17 +1,13 @@
-
-use tui_tree_widget::{TreeItem};
-use std::path::Path;
-use crate::utils::{find_color, is_ignored_path};
 use crate::app::Theme;
-use ratatui::{
-    style::{Style},
-    text::{Span},
-};
-
+use crate::utils::{find_color, is_ignored_path};
+use ratatui::{style::Style, text::Span};
+use std::path::Path;
+use tui_tree_widget::TreeItem;
 
 pub fn build_tree_items(
-    path: &Path, root_path: &Path,
-    theme: &Theme
+    path: &Path,
+    root_path: &Path,
+    theme: &Theme,
 ) -> Vec<TreeItem<'static, String>> {
     let mut folders = Vec::new();
     let mut files = Vec::new();
@@ -46,14 +42,12 @@ pub fn build_tree_items(
     items
 }
 
-pub fn build_initial_tree_items(
-    root_path: &Path, theme: &Theme
-) -> Vec<TreeItem<'static, String>> {
-   
+pub fn build_initial_tree_items(root_path: &Path, theme: &Theme) -> Vec<TreeItem<'static, String>> {
     let child_items = build_tree_items(root_path, root_path, theme);
 
     // Create root tree item containing all children
-    let root_name = root_path.file_name()
+    let root_name = root_path
+        .file_name()
         .unwrap_or_else(|| std::ffi::OsStr::new("."))
         .to_string_lossy()
         .into_owned();
@@ -73,7 +67,6 @@ pub fn expand_path_in_tree_items(
     root_path: &Path,
     theme: &Theme,
 ) -> std::io::Result<bool> {
-
     for i in 0..items.len() {
         let item = &mut items[i];
 
@@ -94,7 +87,10 @@ pub fn expand_path_in_tree_items(
         for child_idx in 0..item.children().len() {
             if let Some(child) = item.child_mut(child_idx) {
                 let found = expand_path_in_tree_items(
-                    std::slice::from_mut(child), target_path, root_path, theme
+                    std::slice::from_mut(child),
+                    target_path,
+                    root_path,
+                    theme,
                 )?;
                 if found {
                     return Ok(true);

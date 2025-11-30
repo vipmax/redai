@@ -35,7 +35,7 @@ use crate::diff::EditKind::*;
 use crate::diff::Edit;
 use crate::utils::{abs_file};
 use crate::watcher::FsWatcher;
-use crate::search::{SearchPanel, SearchAction, SearchMode};
+use crate::search::{SearchPanel, SearchAction, SearchMode, SearchUpdate};
 use crate::tree::{build_initial_tree_items, expand_path_in_tree_items};
 use notify::event::ModifyKind;
 
@@ -80,6 +80,9 @@ pub struct App {
     self_update: bool,
     search_panel: SearchPanel,
     left_panel_mode: LeftPanelMode,
+    search_rx: mpsc::UnboundedReceiver<SearchUpdate>,
+    search_tx: mpsc::UnboundedSender<SearchUpdate>,
+    search_handle: Option<JoinHandle<()>>,
 }
 
 impl App {
@@ -94,8 +97,10 @@ impl App {
         let mut coder = Coder::new(llm_client);
         coder.update(&PathBuf::from(filename), &content);
         let (tx, rx) = mpsc::channel(1);
+        let (search_tx, search_rx) = mpsc::unbounded_channel();
         let tree_focused = if filename.is_empty() { true } else { false };
         let watcher = FsWatcher::new();
+        let search_tx_clone = search_tx.clone();
 
         let mut tree_state = TreeState::default();
 
@@ -125,6 +130,9 @@ impl App {
             self_update: false,
             search_panel: SearchPanel::new(),
             left_panel_mode: LeftPanelMode::Tree,
+            search_rx,
+            search_tx: search_tx_clone,
+            search_handle: None,
         }
     }
 
@@ -150,6 +158,12 @@ impl App {
                 event = self.watcher.watch_rx.recv() => {
                     if let Some(Ok(result)) = event {
                         self.handle_watch_event(result).await?;
+                        terminal.draw(|frame| self.render(frame))?;
+                    }
+                }
+                update = self.search_rx.recv() => {
+                    if let Some(update) = update {
+                        self.handle_search_update(update).await?;
                         terminal.draw(|frame| self.render(frame))?;
                     }
                 }
@@ -421,27 +435,22 @@ impl App {
                 self.process_search_action(action).await?;
             }
             Event::Key(key) => {
-                if key.modifiers.contains(KeyModifiers::CONTROL) &&
-                    (key.code == KeyCode::Char('g') || key.code == KeyCode::Char('f')) {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    let mode = match key.code {
+                        KeyCode::Char('f') => Some(SearchMode::Search),
+                        KeyCode::Char('g') => Some(SearchMode::GlobalSearch),
+                        _ => None,
+                    };
                     
-                    if key.code == KeyCode::Char('f') {
-                        self.search_panel.mode = SearchMode::Search;
-                    } 
-                    if key.code == KeyCode::Char('g') {
-                        self.search_panel.mode = SearchMode::GlobalSearch;
-                    }
-                    if !self.search_panel.query.is_empty() {
-                        if self.search_panel.mode == SearchMode::GlobalSearch {
-                            let root_path = std::env::current_dir()?;
-                            self.search_panel.global_search(&root_path);
-                        } else {
-                            let content = self.editor.get_content();
-                            self.search_panel.search(&content);
+                    if let Some(new_mode) = mode {
+                        self.search_panel.mode = new_mode;
+                        if !self.search_panel.query.is_empty() {
+                            self.process_search_action(SearchAction::UpdateSearch).await?;
                         }
+                        return Ok(());
                     }
-                    return Ok(());
                 }
-
+            
                 let action = self.search_panel.handle_input(*key, self.tree_area);
                 self.process_search_action(action).await?;
             }
@@ -465,13 +474,54 @@ impl App {
         Ok(())
     }
 
+    async fn handle_search_update(&mut self, update: SearchUpdate) -> Result<()> {
+        match update {
+            SearchUpdate::Progress { processed, total } => {
+                self.search_panel.search_progress = Some((processed, total));
+            }
+            SearchUpdate::Results(new_results) => {
+                self.search_panel.results.extend(new_results);
+                if !self.search_panel.results.is_empty() && self.search_panel.selected.is_none() {
+                    self.search_panel.selected = Some(0);
+                }
+            }
+            SearchUpdate::Finished { files_processed, duration } => {
+                if self.search_handle.is_some() {
+                    self.search_panel.search_in_progress = false;
+                    self.search_panel.search_time = Some(duration);
+                    self.search_panel.files_processed = Some(files_processed);
+                    self.search_panel.search_progress = None;
+                }
+                self.search_handle = None;
+            }
+        }
+        Ok(())
+    }
+
     async fn process_search_action(&mut self, action: SearchAction) -> Result<()> {
         match action {
             SearchAction::UpdateSearch => {
                 if self.search_panel.mode == SearchMode::GlobalSearch {
-                    // global search by files in current directory
-                    let root_path = std::env::current_dir()?;
-                    self.search_panel.global_search(&root_path);
+                    // cancel previous search if it's in progress
+                    if let Some(handle) = self.search_handle.take() {
+                        handle.abort();
+                    }
+
+                    self.search_panel.results.clear();
+                    self.search_panel.selected = None;
+                    self.search_panel.scroll_offset = 0;
+                    self.search_panel.search_in_progress = true;
+                    self.search_panel.search_progress = None;
+
+                    // spawn global search in a separate task
+                    let handle = SearchPanel::spawn_global_search(
+                        std::env::current_dir()?,
+                        self.search_panel.query.clone(),
+                        self.search_panel.case_sensitive,
+                        self.search_panel.regex_mode,
+                        self.search_tx.clone(),
+                    );
+                    self.search_handle = Some(handle);
                 } else {
                     // local search in current file
                     let content = self.editor.get_content();
@@ -517,6 +567,13 @@ impl App {
                 self.fallback = None;
             }
             SearchAction::Close => {
+                // Cancel search if it's in progress
+                if let Some(handle) = self.search_handle.take() {
+                    handle.abort();
+                    self.search_panel.search_in_progress = false;
+                    self.search_panel.search_progress = None;
+                }
+                
                 if let Some(fallback) = self.fallback.take() {
                     let _ = self.open_file(&fallback.filename).await;
                     self.editor.set_cursor(fallback.cursor);
