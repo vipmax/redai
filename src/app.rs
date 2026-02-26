@@ -89,11 +89,11 @@ impl App {
     pub fn new(
         language: &str, content: &str,
         filename: &str, llm_client: LlmClient
-    ) -> Self {
+    ) -> Result<Self> {
         let root_path = std::env::current_dir().unwrap();
         let theme = vesper();
         let items = build_initial_tree_items(&root_path, &theme);
-        let editor = Editor::new(language, content, theme.clone());
+        let editor = Editor::new(language, content, theme.clone())?;
         let mut coder = Coder::new(llm_client);
         coder.update(&PathBuf::from(filename), &content);
         let (tx, rx) = mpsc::channel(1);
@@ -108,7 +108,7 @@ impl App {
             tree_state.open(vec![item.identifier().clone()]);
         }
 
-        Self {
+        Ok(Self {
             quit: false,
             editor,
             opened_editors: HashMap::new(),
@@ -133,7 +133,7 @@ impl App {
             search_rx,
             search_tx: search_tx_clone,
             search_handle: None,
-        }
+        })
     }
 
     pub async fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
@@ -222,6 +222,10 @@ impl App {
             Event::Key(key) => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('t') {
                     self.left_panel_focused = !self.left_panel_focused;
+                    return Ok(());
+                }
+                if is_autocomplete_pressed(*key) {
+                    self.spawn_autocomplete_task();
                     return Ok(());
                 }
             }
@@ -628,7 +632,7 @@ impl App {
                     lang = "shell".to_string();
                 }
                 let content = fs::read_to_string(filename)?;
-                Editor::new(&lang, &content, theme)
+                Editor::new(&lang, &content, theme)?
             }
         };
     
@@ -732,8 +736,13 @@ impl App {
     async fn handle_autocomplete(
         &mut self, result: Result<Vec<Edit>>
     ) -> Result<()> {
-        if let Ok(edits) = result {
-            self.apply_edits(edits).await?
+        match result {
+            Ok(edits) => {
+                self.apply_edits(edits).await?
+            }
+            Err(err) => {
+                eprintln!("autocomplete error: {err:#}");
+            }
         }
         Ok(())
     }
@@ -798,7 +807,7 @@ fn is_save_pressed(key: KeyEvent) -> bool {
 
 fn is_autocomplete_pressed(key: KeyEvent) -> bool {
     key.modifiers.contains(KeyModifiers::CONTROL) &&
-        key.code == KeyCode::Char(' ')
+        key.code == KeyCode::Char('w')
 }
 
 fn is_quit_pressed(key: KeyEvent) -> bool {

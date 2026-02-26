@@ -6,7 +6,6 @@ use tui_tree_widget::TreeItem;
 
 pub fn build_tree_items(
     path: &Path,
-    root_path: &Path,
     theme: &Theme,
 ) -> Vec<TreeItem<'static, String>> {
     let mut folders = Vec::new();
@@ -43,7 +42,7 @@ pub fn build_tree_items(
 }
 
 pub fn build_initial_tree_items(root_path: &Path, theme: &Theme) -> Vec<TreeItem<'static, String>> {
-    let child_items = build_tree_items(root_path, root_path, theme);
+    let child_items = build_tree_items(root_path, theme);
 
     // Create root tree item containing all children
     let root_name = root_path
@@ -75,7 +74,7 @@ pub fn expand_path_in_tree_items(
             // target_path is now an absolute path, use it directly
             let full_path = Path::new(target_path);
             if full_path.is_dir() {
-                let children = build_tree_items(full_path, root_path, theme);
+                let children = build_tree_items(full_path, theme);
                 for child in children {
                     let _ = item.add_child(child);
                 }
