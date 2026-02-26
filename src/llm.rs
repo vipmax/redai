@@ -46,7 +46,6 @@ mod tests {
         let api_key = std::env::var("OPENROUTER_API_KEY")?;
         let base_url = "https://openrouter.ai/api/v1";
         let model = "mistralai/codestral-2508";
-        let model = "liquid/lfm-2-24b-a2b";
 
         let client = LlmClient::new(&api_key, base_url, model);
         
