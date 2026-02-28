@@ -33,7 +33,7 @@ jobs:
       - name: Package as tar.gz
         run: |
           mkdir -p dist
-          x86_64-linux-musl-strip target/x86_64-unknown-linux-musl/release/redai
+          strip target/x86_64-unknown-linux-musl/release/redai
           cp target/x86_64-unknown-linux-musl/release/redai dist/
           tar -czf redai-linux.tar.gz -C dist redai
 
