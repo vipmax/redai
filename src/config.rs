@@ -12,12 +12,12 @@ impl Config {
     pub fn from_env() -> Result<Self> {
         let api_key = std::env::var("OPENROUTER_API_KEY")
             .map_err(|_| anyhow::anyhow!("OPENROUTER_API_KEY environment variable not set"))?;
-        
+
         let base_url = std::env::var("OPENROUTER_BASE_URL")
             .unwrap_or_else(|_| "https://openrouter.ai/api/v1".to_string());
-        
+
         let model = std::env::var("OPENROUTER_MODEL")
-            .unwrap_or_else(|_| "liquid/lfm-2-24b-a2b".to_string());
+            .unwrap_or_else(|_| "mistralai/codestral-2508".to_string());
 
         Ok(Self {
             api_key,

@@ -54,6 +54,7 @@ pub struct Fallback {
     cursor: usize,
     offsets: (usize, usize),
     selection: Option<Selection>,
+    left_panel_visible: bool,
 }
 
 pub type Theme = Vec<(&'static str, &'static str)>;
@@ -68,6 +69,7 @@ pub struct App {
     quit: bool,
     split_ratio: usize,
     is_resizing: bool,
+    left_panel_visible: bool,
     left_panel_focused: bool,
     tree_area: Rect,
     tree_state: TreeState<String>,
@@ -98,7 +100,8 @@ impl App {
         coder.update(&PathBuf::from(filename), &content);
         let (tx, rx) = mpsc::channel(1);
         let (search_tx, search_rx) = mpsc::unbounded_channel();
-        let tree_focused = if filename.is_empty() { true } else { false };
+        let left_panel_visible = filename.is_empty();
+        let tree_focused = left_panel_visible;
         let watcher = FsWatcher::new();
         let search_tx_clone = search_tx.clone();
 
@@ -120,8 +123,9 @@ impl App {
             autocomplete_handle: None,
             autocomplete_tx: tx,
             autocomplete_rx: rx,
-            split_ratio: 30,
+            split_ratio: 20,
             is_resizing: false,
+            left_panel_visible,
             left_panel_focused: tree_focused,
             tree_area: Rect::default(),
             tree_state: tree_state,
@@ -174,11 +178,16 @@ impl App {
     }
 
     fn render(&mut self, frame: &mut Frame) {
+        let left_panel_ratio = if self.left_panel_visible {
+            self.split_ratio as u16
+        } else {
+            0
+        };
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([
-                Constraint::Percentage(self.split_ratio as u16),
-                Constraint::Percentage((100 - self.split_ratio) as u16),
+                Constraint::Percentage(left_panel_ratio),
+                Constraint::Percentage(100 - left_panel_ratio),
             ])
             .split(frame.area());
 
@@ -186,20 +195,22 @@ impl App {
         self.editor_area = chunks[1];
 
         // Render left panel based on mode
-        if self.left_panel_mode == LeftPanelMode::Search {
-            // Render search panel
-            self.search_panel.render(frame, self.tree_area);
-        } else {
-            // Render tree panel
-            let widget = Tree::new(&self.tree_items)
-                .expect("all item identifiers are unique")
-                .highlight_style(
-                    Style::new()
-                        .fg(Color::White)
-                        .bg(Color::DarkGray)
-                        .add_modifier(Modifier::BOLD),
-                );
-            frame.render_stateful_widget(widget, self.tree_area, &mut self.tree_state);
+        if self.left_panel_visible {
+            if self.left_panel_mode == LeftPanelMode::Search {
+                // Render search panel
+                self.search_panel.render(frame, self.tree_area);
+            } else {
+                // Render tree panel
+                let widget = Tree::new(&self.tree_items)
+                    .expect("all item identifiers are unique")
+                    .highlight_style(
+                        Style::new()
+                            .fg(Color::White)
+                            .bg(Color::DarkGray)
+                            .add_modifier(Modifier::BOLD),
+                    );
+                frame.render_stateful_widget(widget, self.tree_area, &mut self.tree_state);
+            }
         }
 
         if self.filename.is_empty() {
@@ -221,7 +232,14 @@ impl App {
         match event {
             Event::Key(key) => {
                 if key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('t') {
-                    self.left_panel_focused = !self.left_panel_focused;
+                    if !self.left_panel_visible {
+                        self.left_panel_visible = true;
+                        self.left_panel_mode = LeftPanelMode::Tree;
+                        self.left_panel_focused = true;
+                    } else {
+                        self.left_panel_visible = false;
+                        self.left_panel_focused = false;
+                    }
                     return Ok(());
                 }
                 if is_autocomplete_pressed(*key) {
@@ -230,6 +248,11 @@ impl App {
                 }
             }
             Event::Mouse(mouse) => {
+                if !self.left_panel_visible {
+                    self.left_panel_focused = false;
+                    return self.handle_editor_event(event).await;
+                }
+
                 self.left_panel_focused = is_focused(mouse, self.tree_area);
 
                 let splitter_x = self.tree_area.x + self.tree_area.width;
@@ -276,7 +299,7 @@ impl App {
     async fn handle_editor_event(&mut self, event: &Event) -> Result<()> {
         match event {
             Event::Paste(paste) => {
-                self.editor.apply(ratatui_code_editor::actions::InsertText{ 
+                self.editor.apply(ratatui_code_editor::actions::InsertText{
                     text: paste.to_string()
                 });
             }
@@ -288,9 +311,11 @@ impl App {
                         cursor: self.editor.get_cursor(),
                         selection: self.editor.get_selection(),
                         offsets: (self.editor.get_offset_y(), self.editor.get_offset_x()),
+                        left_panel_visible: self.left_panel_visible,
                     });
                     self.search_panel.activate(SearchMode::Search);
                     self.left_panel_mode = LeftPanelMode::Search;
+                    self.left_panel_visible = true;
                     self.left_panel_focused = true;
 
                     // if there is a selection, use it as the search query
@@ -309,9 +334,11 @@ impl App {
                         cursor: self.editor.get_cursor(),
                         selection: self.editor.get_selection(),
                         offsets: (self.editor.get_offset_y(), self.editor.get_offset_x()),
+                        left_panel_visible: self.left_panel_visible,
                     });
                     self.search_panel.activate(SearchMode::GlobalSearch);
                     self.left_panel_mode = LeftPanelMode::Search;
+                    self.left_panel_visible = true;
                     self.left_panel_focused = true;
 
                     // if there is a selection, use it as the search query
@@ -445,7 +472,7 @@ impl App {
                         KeyCode::Char('g') => Some(SearchMode::GlobalSearch),
                         _ => None,
                     };
-                    
+
                     if let Some(new_mode) = mode {
                         self.search_panel.mode = new_mode;
                         if !self.search_panel.query.is_empty() {
@@ -454,7 +481,7 @@ impl App {
                         return Ok(());
                     }
                 }
-            
+
                 let action = self.search_panel.handle_input(*key, self.tree_area);
                 self.process_search_action(action).await?;
             }
@@ -562,13 +589,18 @@ impl App {
                     self.open_file(file_path).await?;
                 }
 
+                let left_panel_visible = self.fallback
+                    .take()
+                    .map(|fallback| fallback.left_panel_visible)
+                    .unwrap_or(self.left_panel_visible);
+
                 self.left_panel_mode = LeftPanelMode::Tree;
+                self.left_panel_visible = left_panel_visible;
                 let cursor_pos = result.match_start;
                 self.editor.set_cursor(cursor_pos);
                 self.editor.focus(&self.editor_area);
                 self.left_panel_focused = false;
                 self.editor.remove_marks();
-                self.fallback = None;
             }
             SearchAction::Close => {
                 // Cancel search if it's in progress
@@ -577,7 +609,7 @@ impl App {
                     self.search_panel.search_in_progress = false;
                     self.search_panel.search_progress = None;
                 }
-                
+
                 if let Some(fallback) = self.fallback.take() {
                     let _ = self.open_file(&fallback.filename).await;
                     self.editor.set_cursor(fallback.cursor);
@@ -587,6 +619,7 @@ impl App {
                     self.editor.set_offset_y(fallback.offsets.0);
                     self.editor.set_offset_x(fallback.offsets.1);
                     self.editor.focus(&self.editor_area);
+                    self.left_panel_visible = fallback.left_panel_visible;
                 }
                 self.left_panel_mode = LeftPanelMode::Tree;
                 self.left_panel_focused = false;
@@ -618,10 +651,10 @@ impl App {
     }
 
     pub async fn open_file(&mut self, filename: &str) -> Result<()> {
-        if self.filename == filename || Path::new(filename).is_dir() { 
-            return Ok(()) 
+        if self.filename == filename || Path::new(filename).is_dir() {
+            return Ok(())
         }
-    
+
         // get or create editor for filename
         let mut new_editor = match self.opened_editors.remove(filename) {
             Some(ed) => ed,
@@ -635,7 +668,7 @@ impl App {
                 Editor::new(&lang, &content, theme)?
             }
         };
-    
+
         // swap with current, save old if existed
         if !self.filename.is_empty() {
             std::mem::swap(&mut self.editor, &mut new_editor);
@@ -643,23 +676,23 @@ impl App {
         } else {
             self.editor = new_editor;
         }
-    
+
         // update coder and state
         let content = self.editor.get_content();
         {
             let mut coder = self.coder.lock().await;
             coder.update(&PathBuf::from(filename), &content);
         }
-    
+
         self.filename = filename.to_string();
         self.watcher.add(Path::new(filename))?;
-        
+
         self.open_file_in_tree(filename);
-        
+
         self.left_panel_focused = false;
         Ok(())
     }
-    
+
     pub fn open_file_in_tree(&mut self, filename: &str) {
         let root_path = match std::env::current_dir() {
             Ok(p) => p,
@@ -767,9 +800,9 @@ impl App {
 
         let last_change = changed_ranges.last().unwrap();
 
-        // create an edit batch with fallback 
+        // create an edit batch with fallback
         let editbatch = EditBatch {
-            edits: editor_edits, 
+            edits: editor_edits,
             state_before: Some(EditState {
                 offset: self.editor.get_cursor(), selection: self.editor.get_selection(),
             }),
@@ -807,7 +840,7 @@ fn is_save_pressed(key: KeyEvent) -> bool {
 
 fn is_autocomplete_pressed(key: KeyEvent) -> bool {
     key.modifiers.contains(KeyModifiers::CONTROL) &&
-        key.code == KeyCode::Char('w')
+        key.code == KeyCode::Char(' ')
 }
 
 fn is_quit_pressed(key: KeyEvent) -> bool {
