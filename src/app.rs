@@ -1,42 +1,40 @@
-use std::path::PathBuf;
-use crossterm::{
-    event::{
-        Event, KeyCode, KeyModifiers, KeyEvent, KeyEventKind,
-        MouseEventKind, MouseEvent
-    },
-};
 use anyhow::Result;
-use crossterm::event::{EventStream};
-use ratatui::layout::{Layout, Constraint, Direction, Rect, Position};
-use ratatui::{DefaultTerminal, Frame};
+use crossterm::event::EventStream;
+use crossterm::event::{
+    Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEvent, MouseEventKind,
+};
+use ratatui::layout::{Constraint, Direction, Layout, Position, Rect};
 use ratatui::style::{Color, Modifier, Style};
+use ratatui::widgets::{Paragraph, Wrap};
+use ratatui::{DefaultTerminal, Frame};
+use ratatui_code_editor::code::{EditBatch, EditKind, EditState};
 use ratatui_code_editor::editor::Editor;
 use ratatui_code_editor::selection::Selection;
 use ratatui_code_editor::theme::vesper;
 use ratatui_code_editor::utils::get_lang;
-use ratatui_code_editor::code::{EditKind, EditBatch, EditState};
-use ratatui::widgets::{Paragraph, Wrap};
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Write;
-use tokio_stream::StreamExt;
-use tokio::task::JoinHandle;
-use tokio::sync::mpsc;
+use std::path::Path;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
+use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
+use tokio_stream::StreamExt;
 use tui_tree_widget::{Tree, TreeItem, TreeState};
-use std::path::{Path};
-use std::collections::HashMap;
 
-use crate::diff::compute_changed_ranges_normalized;
 use crate::coder::Coder;
-use crate::llm::LlmClient;
 use crate::diff::ChangedRangeKind;
-use crate::diff::EditKind::*;
 use crate::diff::Edit;
-use crate::utils::{abs_file};
-use crate::watcher::FsWatcher;
-use crate::search::{SearchPanel, SearchAction, SearchMode, SearchUpdate};
+use crate::diff::EditKind::*;
+use crate::diff::compute_changed_ranges_normalized;
+use crate::diff::compute_text_edits;
+use crate::llm::LlmClient;
+use crate::search::{SearchAction, SearchMode, SearchPanel, SearchUpdate};
 use crate::tree::{build_initial_tree_items, expand_path_in_tree_items};
+use crate::utils::abs_file;
+use crate::watcher::FsWatcher;
 use notify::event::ModifyKind;
 
 const COLOR_INSERT: &str = "#02a365";
@@ -89,8 +87,10 @@ pub struct App {
 
 impl App {
     pub fn new(
-        language: &str, content: &str,
-        filename: &str, llm_client: LlmClient
+        language: &str,
+        content: &str,
+        filename: &str,
+        llm_client: LlmClient,
     ) -> Result<Self> {
         let root_path = std::env::current_dir().unwrap();
         let theme = vesper();
@@ -111,7 +111,7 @@ impl App {
             tree_state.open(vec![item.identifier().clone()]);
         }
 
-        Ok(Self {
+        let mut app = Self {
             quit: false,
             editor,
             opened_editors: HashMap::new(),
@@ -137,7 +137,15 @@ impl App {
             search_rx,
             search_tx: search_tx_clone,
             search_handle: None,
-        })
+        };
+
+        if !filename.is_empty() {
+            app.open_file_in_tree(filename);
+        }
+
+        app.sync_watch_paths()?;
+
+        Ok(app)
     }
 
     pub async fn run(mut self, mut terminal: DefaultTerminal) -> Result<()> {
@@ -222,7 +230,7 @@ impl App {
             frame.render_widget(&self.editor, self.editor_area);
 
             let cursor = self.editor.get_visible_cursor(&self.editor_area);
-            if let Some((x,y)) = cursor {
+            if let Some((x, y)) = cursor {
                 frame.set_cursor_position(Position::new(x, y));
             }
         }
@@ -259,7 +267,7 @@ impl App {
 
                 match mouse.kind {
                     MouseEventKind::Down(_) => {
-                        if mouse.column == splitter_x || mouse.column == splitter_x+1 {
+                        if mouse.column == splitter_x || mouse.column == splitter_x + 1 {
                             self.is_resizing = true;
                         } else {
                             self.left_panel_focused = is_focused(mouse, self.tree_area);
@@ -268,7 +276,8 @@ impl App {
                     MouseEventKind::Drag(_) => {
                         if self.is_resizing {
                             let total_width = self.tree_area.width + self.editor_area.width + 2;
-                            let new_ratio = (mouse.column as f32 / total_width as f32 * 100.0) as u16;
+                            let new_ratio =
+                                (mouse.column as f32 / total_width as f32 * 100.0) as u16;
                             self.split_ratio = new_ratio.clamp(0, 100) as usize;
                         }
                     }
@@ -278,10 +287,12 @@ impl App {
                     _ => {}
                 }
             }
-            _ => {},
+            _ => {}
         }
 
-        if self.is_resizing { return Ok(());}
+        if self.is_resizing {
+            return Ok(());
+        }
 
         if self.left_panel_focused {
             if self.left_panel_mode == LeftPanelMode::Search {
@@ -299,8 +310,8 @@ impl App {
     async fn handle_editor_event(&mut self, event: &Event) -> Result<()> {
         match event {
             Event::Paste(paste) => {
-                self.editor.apply(ratatui_code_editor::actions::InsertText{
-                    text: paste.to_string()
+                self.editor.apply(ratatui_code_editor::actions::InsertText {
+                    text: paste.to_string(),
                 });
             }
             Event::Key(key) => {
@@ -356,7 +367,7 @@ impl App {
 
                 if key.code == KeyCode::Esc && has_marks {
                     self.editor.remove_marks();
-                    self.editor.apply(ratatui_code_editor::actions::Undo { });
+                    self.editor.apply(ratatui_code_editor::actions::Undo {});
                 } else if is_quit_pressed(*key) {
                     self.quit = true;
                 } else if is_autocomplete_pressed(*key) {
@@ -369,14 +380,13 @@ impl App {
                     coder.update(&p, &content);
                     self.self_update = true;
                 } else {
-                    let accepted = key.code == KeyCode::Tab ||
-                        key.code == KeyCode::Enter;
+                    let accepted = key.code == KeyCode::Tab || key.code == KeyCode::Enter;
                     if has_marks {
                         if accepted {
                             self.editor.remove_marks();
                         } else {
                             self.editor.remove_marks();
-                            self.editor.apply(ratatui_code_editor::actions::Undo { });
+                            self.editor.apply(ratatui_code_editor::actions::Undo {});
                             self.editor.input(*key, &self.editor_area)?;
                         }
                     } else {
@@ -387,7 +397,7 @@ impl App {
             Event::Mouse(mouse) => {
                 self.editor.mouse(*mouse, &self.editor_area)?;
             }
-            _ => {},
+            _ => {}
         };
 
         Ok(())
@@ -395,24 +405,43 @@ impl App {
 
     async fn handle_tree_event(&mut self, event: &Event) -> Result<()> {
         let mut check_selected = false;
+        let opened_before = self.tree_state.opened().clone();
         match event {
-            Event::Key(key) if !matches!(key.kind, KeyEventKind::Press) => { },
+            Event::Key(key) if !matches!(key.kind, KeyEventKind::Press) => {}
             Event::Key(key) => match key.code {
-                KeyCode::Char('q') => { self.quit = true; },
+                KeyCode::Char('q') => {
+                    self.quit = true;
+                }
                 KeyCode::Enter => {
                     self.tree_state.toggle_selected();
                     check_selected = true;
-                },
+                }
                 // KeyCode::Esc => { self.quit = true; },
-                KeyCode::Left => { self.tree_state.key_left(); },
-                KeyCode::Right => { self.tree_state.key_right(); },
-                KeyCode::Down => { self.tree_state.key_down(); },
-                KeyCode::Up => { self.tree_state.key_up(); },
-                KeyCode::Home => { self.tree_state.select_first(); },
-                KeyCode::End => { self.tree_state.select_last(); },
-                KeyCode::PageDown => { self.tree_state.scroll_down(3); },
-                KeyCode::PageUp => { self.tree_state.scroll_up(3); },
-                _ => { },
+                KeyCode::Left => {
+                    self.tree_state.key_left();
+                }
+                KeyCode::Right => {
+                    self.tree_state.key_right();
+                }
+                KeyCode::Down => {
+                    self.tree_state.key_down();
+                }
+                KeyCode::Up => {
+                    self.tree_state.key_up();
+                }
+                KeyCode::Home => {
+                    self.tree_state.select_first();
+                }
+                KeyCode::End => {
+                    self.tree_state.select_last();
+                }
+                KeyCode::PageDown => {
+                    self.tree_state.scroll_down(3);
+                }
+                KeyCode::PageUp => {
+                    self.tree_state.scroll_up(3);
+                }
+                _ => {}
             },
             Event::Mouse(mouse) => match mouse.kind {
                 MouseEventKind::ScrollDown => {
@@ -422,33 +451,45 @@ impl App {
                     if offset_y < len.saturating_sub(area_height) {
                         self.tree_state.scroll_down(1);
                     }
-                },
-                MouseEventKind::ScrollUp => { self.tree_state.scroll_up(1); },
+                }
+                MouseEventKind::ScrollUp => {
+                    self.tree_state.scroll_up(1);
+                }
                 MouseEventKind::Down(_button) => {
-                    self.tree_state.click_at(Position::new(mouse.column, mouse.row));
+                    self.tree_state
+                        .click_at(Position::new(mouse.column, mouse.row));
                     check_selected = true;
-                },
-                _ => { },
+                }
+                _ => {}
             },
-            Event::Resize(_, _) => { },
-            _ => { },
+            Event::Resize(_, _) => {}
+            _ => {}
         };
 
-        let selected = self.tree_state.selected();
+        let selected = self.tree_state.selected().to_vec();
+        let opened_changed = self.tree_state.opened() != &opened_before;
 
         if check_selected && !selected.is_empty() {
             let name = selected.last().unwrap().to_string();
 
             let path = Path::new(&name);
             if path.is_dir() {
-                expand_path_in_tree_items(
-                    &mut self.tree_items, &name, &std::env::current_dir()?, &self.theme
-                )?;
-                return Ok(())
-            }
-            else {
+                if self.tree_state.opened().contains(&selected) {
+                    self.expand_tree_directory(&name)?;
+                }
+            } else {
                 self.open_file(&name).await?;
             }
+        } else if opened_changed && !selected.is_empty() {
+            let name = selected.last().unwrap().to_string();
+            let path = Path::new(&name);
+            if path.is_dir() && self.tree_state.opened().contains(&selected) {
+                self.expand_tree_directory(&name)?;
+            }
+        }
+
+        if opened_changed {
+            self.sync_watch_paths()?;
         }
 
         Ok(())
@@ -476,7 +517,8 @@ impl App {
                     if let Some(new_mode) = mode {
                         self.search_panel.mode = new_mode;
                         if !self.search_panel.query.is_empty() {
-                            self.process_search_action(SearchAction::UpdateSearch).await?;
+                            self.process_search_action(SearchAction::UpdateSearch)
+                                .await?;
                         }
                         return Ok(());
                     }
@@ -485,21 +527,19 @@ impl App {
                 let action = self.search_panel.handle_input(*key, self.tree_area);
                 self.process_search_action(action).await?;
             }
-            Event::Mouse(mouse) => {
-                match mouse.kind {
-                    crossterm::event::MouseEventKind::Down(_) => {
-                        let action = self.search_panel.handle_mouse_click(mouse, self.tree_area);
-                        self.process_search_action(action).await?;
-                    }
-                    crossterm::event::MouseEventKind::ScrollDown => {
-                        self.search_panel.scroll_down(self.tree_area);
-                    }
-                    crossterm::event::MouseEventKind::ScrollUp => {
-                        self.search_panel.scroll_up();
-                    }
-                    _ => {}
+            Event::Mouse(mouse) => match mouse.kind {
+                crossterm::event::MouseEventKind::Down(_) => {
+                    let action = self.search_panel.handle_mouse_click(mouse, self.tree_area);
+                    self.process_search_action(action).await?;
                 }
-            }
+                crossterm::event::MouseEventKind::ScrollDown => {
+                    self.search_panel.scroll_down(self.tree_area);
+                }
+                crossterm::event::MouseEventKind::ScrollUp => {
+                    self.search_panel.scroll_up();
+                }
+                _ => {}
+            },
             _ => {}
         }
         Ok(())
@@ -516,7 +556,10 @@ impl App {
                     self.search_panel.selected = Some(0);
                 }
             }
-            SearchUpdate::Finished { files_processed, duration } => {
+            SearchUpdate::Finished {
+                files_processed,
+                duration,
+            } => {
                 if self.search_handle.is_some() {
                     self.search_panel.search_in_progress = false;
                     self.search_panel.search_time = Some(duration);
@@ -572,14 +615,14 @@ impl App {
                     self.editor.set_cursor(cursor_pos);
                     self.editor.focus(&self.editor_area);
 
-                    let marks = vec![(result.match_start,result.match_end, "#585858")];
+                    let marks = vec![(result.match_start, result.match_end, "#585858")];
                     self.editor.set_marks(marks);
                 } else {
                     // local search in current file
                     let cursor_pos = result.match_start;
                     self.editor.set_cursor(cursor_pos);
                     self.editor.focus(&self.editor_area);
-                    let marks = vec![(result.match_start,result.match_end,"#585858")];
+                    let marks = vec![(result.match_start, result.match_end, "#585858")];
                     self.editor.set_marks(marks);
                 }
                 self.left_panel_focused = true;
@@ -589,7 +632,8 @@ impl App {
                     self.open_file(file_path).await?;
                 }
 
-                let left_panel_visible = self.fallback
+                let left_panel_visible = self
+                    .fallback
                     .take()
                     .map(|fallback| fallback.left_panel_visible)
                     .unwrap_or(self.left_panel_visible);
@@ -629,7 +673,12 @@ impl App {
         Ok(())
     }
 
-    async fn handle_watch_event(&mut self, event: notify::Event) -> Result<()>{
+    async fn handle_watch_event(&mut self, event: notify::Event) -> Result<()> {
+        if should_refresh_tree(&event) {
+            self.refresh_tree()?;
+            self.sync_watch_paths()?;
+        }
+
         match event.kind {
             notify::EventKind::Modify(ModifyKind::Data(_)) => {
                 if self.self_update {
@@ -640,9 +689,23 @@ impl App {
                 let self_path = Path::new(&self_abs);
                 let is_need_self_update = event.paths.iter().any(|p| p == &self_path);
                 if is_need_self_update {
-                    let content = fs::read_to_string(&self_path)?;
+                    let old_content = self.editor.get_content();
+                    let new_content = fs::read_to_string(&self_path)?;
                     self.self_update = false;
-                    self.editor.set_content(&content);
+
+                    if old_content != new_content {
+                        let edits = compute_text_edits(&old_content, &new_content);
+
+                        if edits.is_empty() {
+                            self.editor.set_content(&new_content);
+                            clamp_editor_state(&mut self.editor);
+                        } else {
+                            self.apply_external_edits(edits)?;
+                        }
+
+                        let mut coder = self.coder.lock().await;
+                        coder.update(&PathBuf::from(&self.filename), &new_content);
+                    }
                 }
             }
             _ => {}
@@ -652,7 +715,7 @@ impl App {
 
     pub async fn open_file(&mut self, filename: &str) -> Result<()> {
         if self.filename == filename || Path::new(filename).is_dir() {
-            return Ok(())
+            return Ok(());
         }
 
         // get or create editor for filename
@@ -672,7 +735,8 @@ impl App {
         // swap with current, save old if existed
         if !self.filename.is_empty() {
             std::mem::swap(&mut self.editor, &mut new_editor);
-            self.opened_editors.insert(self.filename.clone(), new_editor);
+            self.opened_editors
+                .insert(self.filename.clone(), new_editor);
         } else {
             self.editor = new_editor;
         }
@@ -685,9 +749,8 @@ impl App {
         }
 
         self.filename = filename.to_string();
-        self.watcher.add(Path::new(filename))?;
-
         self.open_file_in_tree(filename);
+        self.sync_watch_paths()?;
 
         self.left_panel_focused = false;
         Ok(())
@@ -719,7 +782,10 @@ impl App {
 
         // Build path by traversing from root to file's parent directory
         let mut current_path = root_path.clone();
-        if let Some(rel_path) = abs_file_path.parent().and_then(|p| p.strip_prefix(&root_path).ok()) {
+        if let Some(rel_path) = abs_file_path
+            .parent()
+            .and_then(|p| p.strip_prefix(&root_path).ok())
+        {
             for component in rel_path.iter() {
                 current_path = current_path.join(component);
                 let dir_id = current_path.to_string_lossy().into_owned();
@@ -751,6 +817,50 @@ impl App {
         self.tree_state.select(select_path);
     }
 
+    fn expand_tree_directory(&mut self, path: &str) -> Result<()> {
+        expand_path_in_tree_items(
+            &mut self.tree_items,
+            path,
+            &std::env::current_dir()?,
+            &self.theme,
+        )?;
+        Ok(())
+    }
+
+    fn refresh_tree(&mut self) -> Result<()> {
+        let root_path = std::env::current_dir()?;
+        let mut opened_paths = self.tree_state.opened().iter().cloned().collect::<Vec<_>>();
+        opened_paths.sort_by_key(|path| path.len());
+
+        self.tree_items = build_initial_tree_items(&root_path, &self.theme);
+
+        for opened_path in opened_paths {
+            if let Some(target_path) = opened_path.last() {
+                self.expand_tree_directory(target_path)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    fn sync_watch_paths(&mut self) -> Result<()> {
+        let mut watch_paths = self
+            .tree_state
+            .opened()
+            .iter()
+            .filter_map(|opened_path| opened_path.last())
+            .map(PathBuf::from)
+            .filter(|path| path.is_dir())
+            .collect::<HashSet<_>>();
+
+        if !self.filename.is_empty() {
+            watch_paths.insert(PathBuf::from(abs_file(&self.filename)));
+        }
+
+        self.watcher.sync(watch_paths)?;
+        Ok(())
+    }
+
     fn spawn_autocomplete_task(&mut self) {
         let tx = self.autocomplete_tx.clone();
         let content = self.editor.get_content();
@@ -766,13 +876,9 @@ impl App {
         self.autocomplete_handle = Some(handle);
     }
 
-    async fn handle_autocomplete(
-        &mut self, result: Result<Vec<Edit>>
-    ) -> Result<()> {
+    async fn handle_autocomplete(&mut self, result: Result<Vec<Edit>>) -> Result<()> {
         match result {
-            Ok(edits) => {
-                self.apply_edits(edits).await?
-            }
+            Ok(edits) => self.apply_edits(edits).await?,
             Err(err) => {
                 eprintln!("autocomplete error: {err:#}");
             }
@@ -780,23 +886,31 @@ impl App {
         Ok(())
     }
 
-    async fn apply_edits(
-        &mut self, edits: Vec<crate::diff::Edit>
-    ) -> Result<()> {
-
-        if edits.is_empty() { return Ok(()) }
+    async fn apply_edits(&mut self, edits: Vec<crate::diff::Edit>) -> Result<()> {
+        if edits.is_empty() {
+            return Ok(());
+        }
 
         // calculate changed ranges to visualize
         let changed_ranges = compute_changed_ranges_normalized(&edits);
 
         // map edits to ratatui-code-editor edit type
-        let editor_edits = edits.iter().map(|e| {
-            let kind = match &e.kind {
-                Insert => EditKind::Insert { offset: e.start, text: e.text.clone() },
-                Delete => EditKind::Remove { offset: e.start, text: e.text.clone() },
-            };
-            ratatui_code_editor::code::Edit { kind }
-        }).collect::<Vec<_>>();
+        let editor_edits = edits
+            .iter()
+            .map(|e| {
+                let kind = match &e.kind {
+                    Insert => EditKind::Insert {
+                        offset: e.start,
+                        text: e.text.clone(),
+                    },
+                    Delete => EditKind::Remove {
+                        offset: e.start,
+                        text: e.text.clone(),
+                    },
+                };
+                ratatui_code_editor::code::Edit { kind }
+            })
+            .collect::<Vec<_>>();
 
         let last_change = changed_ranges.last().unwrap();
 
@@ -804,10 +918,12 @@ impl App {
         let editbatch = EditBatch {
             edits: editor_edits,
             state_before: Some(EditState {
-                offset: self.editor.get_cursor(), selection: self.editor.get_selection(),
+                offset: self.editor.get_cursor(),
+                selection: self.editor.get_selection(),
             }),
             state_after: Some(EditState {
-                offset: last_change.end, selection: self.editor.get_selection(),
+                offset: last_change.end,
+                selection: self.editor.get_selection(),
             }),
         };
 
@@ -818,12 +934,13 @@ impl App {
         self.editor.set_cursor(last_change.end);
 
         // map changed ranges to ratatui-code-editor mark type
-        let marks = changed_ranges.iter().map(|r| {
-            match r.kind {
+        let marks = changed_ranges
+            .iter()
+            .map(|r| match r.kind {
                 ChangedRangeKind::Insert => (r.start, r.end, COLOR_INSERT),
                 ChangedRangeKind::Delete => (r.start, r.end, COLOR_DELETE),
-            }
-        }).collect::<Vec<_>>();
+            })
+            .collect::<Vec<_>>();
 
         // apply marks to editor
         self.editor.set_marks(marks);
@@ -831,21 +948,61 @@ impl App {
         Ok(())
     }
 
+    fn apply_external_edits(&mut self, edits: Vec<crate::diff::Edit>) -> Result<()> {
+        if edits.is_empty() {
+            return Ok(());
+        }
+
+        let cursor_before = self.editor.get_cursor();
+        let selection_before = self.editor.get_selection();
+
+        let editor_edits = edits
+            .iter()
+            .map(|e| {
+                let kind = match &e.kind {
+                    Insert => EditKind::Insert {
+                        offset: e.start,
+                        text: e.text.clone(),
+                    },
+                    Delete => EditKind::Remove {
+                        offset: e.start,
+                        text: e.text.clone(),
+                    },
+                };
+                ratatui_code_editor::code::Edit { kind }
+            })
+            .collect::<Vec<_>>();
+
+        let editbatch = EditBatch {
+            edits: editor_edits,
+            state_before: Some(EditState {
+                offset: cursor_before,
+                selection: selection_before,
+            }),
+            state_after: Some(EditState {
+                offset: cursor_before,
+                selection: selection_before,
+            }),
+        };
+
+        self.editor.apply_batch(&editbatch);
+        self.editor.remove_marks();
+        clamp_editor_state(&mut self.editor);
+
+        Ok(())
+    }
 }
 
 fn is_save_pressed(key: KeyEvent) -> bool {
-    key.modifiers.contains(KeyModifiers::CONTROL) &&
-        key.code == KeyCode::Char('s')
+    key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('s')
 }
 
 fn is_autocomplete_pressed(key: KeyEvent) -> bool {
-    key.modifiers.contains(KeyModifiers::CONTROL) &&
-        key.code == KeyCode::Char(' ')
+    key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char(' ')
 }
 
 fn is_quit_pressed(key: KeyEvent) -> bool {
-    key.modifiers.contains(KeyModifiers::CONTROL) &&
-        key.code == KeyCode::Char('q')
+    key.modifiers.contains(KeyModifiers::CONTROL) && key.code == KeyCode::Char('q')
 }
 
 fn save_to_file(content: &str, path: &str) -> Result<()> {
@@ -854,15 +1011,39 @@ fn save_to_file(content: &str, path: &str) -> Result<()> {
     Ok(())
 }
 
-fn is_focused(mouse: &MouseEvent,area: Rect) -> bool {
+fn is_focused(mouse: &MouseEvent, area: Rect) -> bool {
     let x = mouse.column;
     let y = mouse.row;
-    if rect_contains(area, x, y) { true } else { false }
+    if rect_contains(area, x, y) {
+        true
+    } else {
+        false
+    }
 }
 
 fn rect_contains(rect: Rect, x: u16, y: u16) -> bool {
-    x >= rect.x &&
-    x < rect.x + rect.width &&
-    y >= rect.y &&
-    y < rect.y + rect.height
+    x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height
+}
+
+fn should_refresh_tree(event: &notify::Event) -> bool {
+    matches!(
+        event.kind,
+        notify::EventKind::Create(_)
+            | notify::EventKind::Remove(_)
+            | notify::EventKind::Modify(ModifyKind::Name(_))
+    )
+}
+
+fn clamp_editor_state(editor: &mut Editor) {
+    let len = editor.code_ref().len_chars();
+    let cursor = editor.get_cursor().min(len);
+    editor.set_cursor(cursor);
+
+    let selection = editor.get_selection().and_then(|selection| {
+        let start = selection.start.min(len);
+        let end = selection.end.min(len);
+        let selection = Selection::new(start, end);
+        (!selection.is_empty()).then_some(selection)
+    });
+    editor.set_selection(selection);
 }

@@ -31,7 +31,11 @@ async fn main() -> anyhow::Result<()> {
     set_panic_hook();
 
     let config = Config::from_env().unwrap();
-    let Config { api_key, base_url, model } = config;
+    let Config {
+        api_key,
+        base_url,
+        model,
+    } = config;
 
     let args: Vec<String> = env::args().collect();
 
@@ -56,11 +60,7 @@ async fn main() -> anyhow::Result<()> {
 
     let llm_client = LlmClient::new(&api_key, &base_url, &model);
 
-    let mut app = App::new(&language, &content, &filename, llm_client)?;
-
-    if !filename.is_empty() {
-        app.open_file_in_tree(&filename);
-    }
+    let app = App::new(&language, &content, &filename, llm_client)?;
 
     let result = app.run(terminal).await;
 
