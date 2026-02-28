@@ -27,6 +27,8 @@ sudo chmod +x /usr/local/bin/redai
 redai
 ```
 
+The Linux release binary is built with musl for better compatibility across older distributions.
+
 Macos:
 ```bash
 curl -L https://github.com/vipmax/redai/releases/latest/download/redai-universal-apple-darwin.tar.gz | tar -xz
