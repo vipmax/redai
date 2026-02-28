@@ -1,13 +1,13 @@
-use std::path::PathBuf;
+use crate::diff::{Edit, compute_text_edits};
 use crate::llm::LlmClient;
-use crate::diff::{compute_text_edits, Edit};
-use serde_json::json;
 use crate::prompts::*;
-use crate::utils::{byte_to_point, offset_to_byte};
-use log::{debug};
 use crate::tracker::Tracker;
-use std::collections::HashMap;
+use crate::utils::{byte_to_point, offset_to_byte};
 use anyhow::{Result, anyhow};
+use log::debug;
+use serde_json::json;
+use std::collections::HashMap;
+use std::path::PathBuf;
 
 pub struct Coder {
     llm: LlmClient,
@@ -16,13 +16,18 @@ pub struct Coder {
 
 impl Coder {
     pub fn new(llm: LlmClient) -> Self {
-        Self { llm, file_trackers: HashMap::new(), }
+        Self {
+            llm,
+            file_trackers: HashMap::new(),
+        }
     }
 
     pub async fn autocomplete(
-        &self, original: &str, _path: &str, cursor: usize
+        &self,
+        original: &str,
+        _path: &str,
+        cursor: usize,
     ) -> Result<Vec<Edit>> {
-
         let cursor_byte = offset_to_byte(cursor, original);
 
         let context = self.build_context(original, cursor_byte, 3)?;
@@ -46,27 +51,37 @@ impl Coder {
 
         let patch = self.parse_patch(&response, cursor)?;
         debug!("patch {:?}", patch);
-        
+
         let (start, search, replace) = patch;
 
         let edits = compute_text_edits(&search, &replace);
         debug!("edits {:?}", edits);
 
-        let mut edits = edits.iter().map(|edit| {
-            let s = edit.start + start;
-            let e = edit.end + start;
-            Edit { start: s, end: e, text: edit.text.clone(), kind: edit.kind.clone() }
-        }).collect::<Vec<_>>();
+        let mut edits = edits
+            .iter()
+            .map(|edit| {
+                let s = edit.start + start;
+                let e = edit.end + start;
+                Edit {
+                    start: s,
+                    end: e,
+                    text: edit.text.clone(),
+                    kind: edit.kind.clone(),
+                }
+            })
+            .collect::<Vec<_>>();
 
         edits.sort_by(|a, b| b.start.cmp(&a.start));
 
         Ok(edits)
     }
-        
-    fn build_context(
-        &self, original: &str, cursor_byte: usize, context_lines: usize
-    ) -> Result<(String, usize)> {
 
+    fn build_context(
+        &self,
+        original: &str,
+        cursor_byte: usize,
+        context_lines: usize,
+    ) -> Result<(String, usize)> {
         let mut original = original.to_string();
         original.insert_str(cursor_byte, CTOKEN);
 
@@ -90,7 +105,8 @@ impl Coder {
 
         let context = lines[start_line..=end_line].join("\n");
 
-        let cursor_relative = context.find(CTOKEN)
+        let cursor_relative = context
+            .find(CTOKEN)
             .ok_or_else(|| anyhow!("CTOKEN not found in context"))?;
 
         let start = cursor_byte - cursor_relative;
@@ -98,19 +114,21 @@ impl Coder {
         Ok((context, start))
     }
 
-    fn parse_patch(
-        &self, patch: &str, cursor: usize
-    ) -> Result<(usize, String, String)> {
-        let search_start = patch.find(STOKEN)
+    fn parse_patch(&self, patch: &str, cursor: usize) -> Result<(usize, String, String)> {
+        let search_start = patch
+            .find(STOKEN)
             .ok_or_else(|| anyhow!("Invalid patch format: missing {}", STOKEN))?;
-        let replace_divider = patch.find(DTOKEN)
+        let replace_divider = patch
+            .find(DTOKEN)
             .ok_or_else(|| anyhow!("Invalid patch format: missing {}", DTOKEN))?;
-        let _replace_end = patch.find(RTOKEN)
+        let _replace_end = patch
+            .find(RTOKEN)
             .ok_or_else(|| anyhow!("Invalid patch format: missing {}", RTOKEN))?;
 
         let search = &patch[search_start + STOKEN.len()..replace_divider];
 
-        let cursor_pos = search.find(CTOKEN)
+        let cursor_pos = search
+            .find(CTOKEN)
             .ok_or_else(|| anyhow::anyhow!("Invalid patch format: missing {}", CTOKEN))?;
         let before = &search[..cursor_pos];
 
@@ -135,9 +153,14 @@ impl Coder {
     }
 
     pub fn last_modified_files(&self, n: usize) -> Vec<PathBuf> {
-        let mut files_with_latest: Vec<_> = self.file_trackers.iter()
+        let mut files_with_latest: Vec<_> = self
+            .file_trackers
+            .iter()
             .filter_map(|(path, tracker)| {
-                tracker.snapshots().last().map(|snap| (path, snap.timestamp))
+                tracker
+                    .snapshots()
+                    .last()
+                    .map(|snap| (path, snap.timestamp))
             })
             .collect();
 
@@ -170,7 +193,6 @@ impl Coder {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -178,7 +200,6 @@ mod tests {
 
     #[test]
     fn test_build_context_basic() {
-
         let code = indoc! {r#"
 fn main() {
     for i in 0..5 {
@@ -214,7 +235,7 @@ fn main() {
 
         Ok(())
     }
-    
+
     #[test]
     fn test_parse_patch_unicode() -> anyhow::Result<()> {
         let coder = Coder::new(LlmClient::new("", "", ""));

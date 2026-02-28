@@ -4,10 +4,7 @@ use ratatui::{style::Style, text::Span};
 use std::path::Path;
 use tui_tree_widget::TreeItem;
 
-pub fn build_tree_items(
-    path: &Path,
-    theme: &Theme,
-) -> Vec<TreeItem<'static, String>> {
+pub fn build_tree_items(path: &Path, theme: &Theme) -> Vec<TreeItem<'static, String>> {
     let mut folders = Vec::new();
     let mut files = Vec::new();
 

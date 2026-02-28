@@ -1,5 +1,5 @@
-use similar::{ChangeTag, TextDiff};
 use crate::utils::offset_to_byte;
+use similar::{ChangeTag, TextDiff};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EditKind {
@@ -79,7 +79,8 @@ pub fn compute_text_edits(old: &str, new: &str) -> Vec<Edit> {
         }
     }
 
-    let mut result = edits.iter()
+    let mut result = edits
+        .iter()
         .flat_map(split_replace_edit)
         .collect::<Vec<_>>();
 
@@ -180,7 +181,7 @@ pub fn diff_without_unchanged(old: &str, new: &str) -> String {
         match change.tag() {
             ChangeTag::Delete => result.push_str(&format!("-{}", change)),
             ChangeTag::Insert => result.push_str(&format!("+{}", change)),
-            ChangeTag::Equal => {} 
+            ChangeTag::Equal => {}
         }
     }
 
@@ -194,16 +195,31 @@ mod tests {
     #[test]
     fn test_compute_edits_simple() {
         let before = "let mut foo = 2;\nfoo *= 50;";
-        let after =  "let mut foo = 5;\naaaa foo *= 50;";
+        let after = "let mut foo = 5;\naaaa foo *= 50;";
 
         let edits = compute_text_edits(before, after);
 
         assert_eq!(
             edits,
             vec![
-                Edit { start: 14, end: 15, text: "2".to_string(), kind: EditKind::Delete },
-                Edit { start: 14, end: 14, text: "5".to_string(), kind: EditKind::Insert },
-                Edit { start: 17, end: 17, text: "aaaa ".to_string(), kind: EditKind::Insert },
+                Edit {
+                    start: 14,
+                    end: 15,
+                    text: "2".to_string(),
+                    kind: EditKind::Delete
+                },
+                Edit {
+                    start: 14,
+                    end: 14,
+                    text: "5".to_string(),
+                    kind: EditKind::Insert
+                },
+                Edit {
+                    start: 17,
+                    end: 17,
+                    text: "aaaa ".to_string(),
+                    kind: EditKind::Insert
+                },
             ]
         );
     }
@@ -211,48 +227,117 @@ mod tests {
     #[test]
     fn test_compute_edits_simple2() {
         let before = r#"println!("Current value: {}", );"#;
-        let after =  r#"println!("Current value: {}", i);"#;
+        let after = r#"println!("Current value: {}", i);"#;
 
         let edits = compute_text_edits(before, after);
 
-        assert_eq!(edits, vec![
-            Edit { start: 30, end: 30, text: "i".to_string(), kind: EditKind::Insert },
-        ])
+        assert_eq!(
+            edits,
+            vec![Edit {
+                start: 30,
+                end: 30,
+                text: "i".to_string(),
+                kind: EditKind::Insert
+            },]
+        )
     }
 
     #[test]
     fn test_compute_edits_unicode() {
         let before = r#"println!("Current значение: {}", i);"#;
-        let after =  r#"println!("Current value: {}", i);"#;
-
-        let edits = compute_text_edits(before, after);
-
-        assert_eq!(edits, vec![
-            Edit { start: 18, end: 18 + 8, text: "значение".to_string(), kind: EditKind::Delete },
-            Edit { start: 18, end: 18, text: "value".to_string(), kind: EditKind::Insert },
-        ])
-    }
-
-    #[test]
-    fn test_compute_edits_complex() {
-        let before = "main rust here";
-        let after =  "fn main() {\n    println!(\"Hello, world!\");\n}";
+        let after = r#"println!("Current value: {}", i);"#;
 
         let edits = compute_text_edits(before, after);
 
         assert_eq!(
             edits,
             vec![
-                Edit { start: 0, end: 0, text: "fn ".to_string(), kind: EditKind::Insert },
-                Edit { start: 4, end: 4, text: "() {\n  ".to_string(), kind: EditKind::Insert },
-                Edit { start: 5, end: 5, text: " p".to_string(), kind: EditKind::Insert },
-                Edit { start: 6, end: 8, text: "us".to_string(), kind: EditKind::Delete },
-                Edit { start: 6, end: 6, text: "in".to_string(), kind: EditKind::Insert },
-                Edit { start: 9, end: 9, text: "ln!(\"Hello,".to_string(), kind: EditKind::Insert },
-                Edit { start: 10, end: 12, text: "he".to_string(), kind: EditKind::Delete },
-                Edit { start: 10, end: 10, text: "wo".to_string(), kind: EditKind::Insert },
-                Edit { start: 13, end: 14, text: "e".to_string(), kind: EditKind::Delete },
-                Edit { start: 13, end: 13, text: "ld!\");\n}".to_string(), kind: EditKind::Insert },
+                Edit {
+                    start: 18,
+                    end: 18 + 8,
+                    text: "значение".to_string(),
+                    kind: EditKind::Delete
+                },
+                Edit {
+                    start: 18,
+                    end: 18,
+                    text: "value".to_string(),
+                    kind: EditKind::Insert
+                },
+            ]
+        )
+    }
+
+    #[test]
+    fn test_compute_edits_complex() {
+        let before = "main rust here";
+        let after = "fn main() {\n    println!(\"Hello, world!\");\n}";
+
+        let edits = compute_text_edits(before, after);
+
+        assert_eq!(
+            edits,
+            vec![
+                Edit {
+                    start: 0,
+                    end: 0,
+                    text: "fn ".to_string(),
+                    kind: EditKind::Insert
+                },
+                Edit {
+                    start: 4,
+                    end: 4,
+                    text: "() {\n  ".to_string(),
+                    kind: EditKind::Insert
+                },
+                Edit {
+                    start: 5,
+                    end: 5,
+                    text: " p".to_string(),
+                    kind: EditKind::Insert
+                },
+                Edit {
+                    start: 6,
+                    end: 8,
+                    text: "us".to_string(),
+                    kind: EditKind::Delete
+                },
+                Edit {
+                    start: 6,
+                    end: 6,
+                    text: "in".to_string(),
+                    kind: EditKind::Insert
+                },
+                Edit {
+                    start: 9,
+                    end: 9,
+                    text: "ln!(\"Hello,".to_string(),
+                    kind: EditKind::Insert
+                },
+                Edit {
+                    start: 10,
+                    end: 12,
+                    text: "he".to_string(),
+                    kind: EditKind::Delete
+                },
+                Edit {
+                    start: 10,
+                    end: 10,
+                    text: "wo".to_string(),
+                    kind: EditKind::Insert
+                },
+                Edit {
+                    start: 13,
+                    end: 14,
+                    text: "e".to_string(),
+                    kind: EditKind::Delete
+                },
+                Edit {
+                    start: 13,
+                    end: 13,
+                    text: "ld!\");\n}".to_string(),
+                    kind: EditKind::Insert
+                },
             ]
         );
     }
@@ -260,35 +345,69 @@ mod tests {
     #[test]
     fn test_compute_changed_ranges_normalized() {
         let before = r#"println!("Current value: {}", );"#;
-        let after =  r#"println!("Current value: {}", i);"#;
-    
+        let after = r#"println!("Current value: {}", i);"#;
+
         let edits = compute_text_edits(before, after);
         let changed_ranges = compute_changed_ranges_normalized(&edits);
-        
-        assert_eq!(edits, vec![
-            Edit { start: 30, end: 30, text: "i".to_string(), kind: EditKind::Insert },
-        ]);
-        assert_eq!(changed_ranges, vec![
-            ChangedRange { start: 30, end: 31, kind: ChangedRangeKind::Insert },
-        ]);
-    }
 
+        assert_eq!(
+            edits,
+            vec![Edit {
+                start: 30,
+                end: 30,
+                text: "i".to_string(),
+                kind: EditKind::Insert
+            },]
+        );
+        assert_eq!(
+            changed_ranges,
+            vec![ChangedRange {
+                start: 30,
+                end: 31,
+                kind: ChangedRangeKind::Insert
+            },]
+        );
+    }
 
     #[test]
     fn test_compute_changed_ranges_normalized_unicode() {
         let before = r#"println!("Current value: {}", i);"#;
-        let after =  r#"println!("Current значение: {}", i);"#;
+        let after = r#"println!("Current значение: {}", i);"#;
 
         let edits = compute_text_edits(before, after);
         let changed_ranges = compute_changed_ranges_normalized(&edits);
 
-        assert_eq!(edits, vec![
-            Edit { start: 18, end: 23, text: "value".to_string(), kind: EditKind::Delete },
-            Edit { start: 18, end: 18, text: "значение".to_string(), kind: EditKind::Insert },
-        ]);
-        assert_eq!(changed_ranges, vec![
-            ChangedRange { start: 18, end: 23, kind: ChangedRangeKind::Delete },
-            ChangedRange { start: 18, end: 26, kind: ChangedRangeKind::Insert },
-        ]);
+        assert_eq!(
+            edits,
+            vec![
+                Edit {
+                    start: 18,
+                    end: 23,
+                    text: "value".to_string(),
+                    kind: EditKind::Delete
+                },
+                Edit {
+                    start: 18,
+                    end: 18,
+                    text: "значение".to_string(),
+                    kind: EditKind::Insert
+                },
+            ]
+        );
+        assert_eq!(
+            changed_ranges,
+            vec![
+                ChangedRange {
+                    start: 18,
+                    end: 23,
+                    kind: ChangedRangeKind::Delete
+                },
+                ChangedRange {
+                    start: 18,
+                    end: 26,
+                    kind: ChangedRangeKind::Insert
+                },
+            ]
+        );
     }
 }

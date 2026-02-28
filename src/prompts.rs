@@ -45,7 +45,6 @@ REJECTED OUTPUT:
 
 "#;
 
-
 pub const REMINDER: &str = r#"
 Edit small context around the <|cursor|>. 
 Keep ORIGINAL users code in {{search}} block. 

@@ -169,7 +169,8 @@ impl SearchPanel {
                         if sel < self.scroll_offset {
                             self.scroll_offset = sel;
                         } else if sel >= self.scroll_offset + visible_height {
-                            self.scroll_offset = sel.saturating_sub(visible_height.saturating_sub(1));
+                            self.scroll_offset =
+                                sel.saturating_sub(visible_height.saturating_sub(1));
                         }
                     }
                     if let Some(result) = self.results.get(selected - 1) {
@@ -188,7 +189,8 @@ impl SearchPanel {
                         if sel < self.scroll_offset {
                             self.scroll_offset = sel;
                         } else if sel >= self.scroll_offset + visible_height {
-                            self.scroll_offset = sel.saturating_sub(visible_height.saturating_sub(1));
+                            self.scroll_offset =
+                                sel.saturating_sub(visible_height.saturating_sub(1));
                         }
                     }
                     if let Some(result) = self.results.get(selected + 1) {
@@ -289,8 +291,12 @@ impl SearchPanel {
         };
 
         let results = Self::search_matches(
-            &content, content_for_search, &search_query, 
-            None, self.case_sensitive, self.regex_mode
+            &content,
+            content_for_search,
+            &search_query,
+            None,
+            self.case_sensitive,
+            self.regex_mode,
         );
 
         self.results.extend(results);

@@ -1,5 +1,5 @@
-use async_openai::{config::OpenAIConfig, Client};
-use serde_json::{json, Value};
+use async_openai::{Client, config::OpenAIConfig};
+use serde_json::{Value, json};
 
 pub struct LlmClient {
     client: Client<OpenAIConfig>,
@@ -11,7 +11,7 @@ impl LlmClient {
         let config = OpenAIConfig::new()
             .with_api_key(api_key)
             .with_api_base(base_url);
-        
+
         let client = Client::with_config(config);
 
         Self {
@@ -24,19 +24,20 @@ impl LlmClient {
         let request = json!({ "model": self.model, "messages": messages });
         let response: Value = self.client.chat().create_byot(request).await?;
         let content = response["choices"][0]["message"]["content"]
-            .as_str().unwrap_or("").to_string();
+            .as_str()
+            .unwrap_or("")
+            .to_string();
 
         Ok(content)
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use indoc::indoc;
+    use crate::prompts::{REMINDER, SYSTEM_PROMPT};
     use dotenv::dotenv;
-    use crate::prompts::{SYSTEM_PROMPT, REMINDER};
+    use indoc::indoc;
 
     #[tokio::test]
     #[ignore]
@@ -48,7 +49,7 @@ mod tests {
         let model = "mistralai/codestral-2508";
 
         let client = LlmClient::new(&api_key, base_url, model);
-        
+
         let code = indoc! {r#"
             fn main() {
                 for i in 0..5 {
@@ -56,9 +57,9 @@ mod tests {
                 }
             }
         "#};
-        
+
         println!("code:\n{}", code);
-        
+
         let messages = vec![
             json!({ "role": "system", "content": SYSTEM_PROMPT }),
             json!({ "role": "user", "content": format!("small context:\n{}", code) }),
@@ -67,7 +68,7 @@ mod tests {
 
         let reply = client.chat(messages).await?;
         println!("llm response:\n{}", reply);
-        
+
         // assert!(reply.contains(
         //     r#"<|SEARCH|>println!("value: {}", <|cursor|>);<|DIVIDE|>println!("value: {}", i);<|REPLACE|>"#
         // ));
