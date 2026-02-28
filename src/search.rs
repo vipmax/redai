@@ -1,4 +1,7 @@
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseEvent};
+use crossterm::event::{
+    Event, KeyCode, KeyEvent,
+    KeyModifiers, MouseEvent, MouseEventKind
+};
 use ratatui::{
     Frame,
     layout::{Constraint, Direction, Layout, Rect},
@@ -10,6 +13,7 @@ use rayon::prelude::*;
 use regex::RegexBuilder;
 use std::time::Instant;
 use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
 
 use crate::utils::*;
 
@@ -64,10 +68,14 @@ pub struct SearchPanel {
     pub files_processed: Option<usize>,
     pub search_in_progress: bool,
     pub search_progress: Option<(usize, usize)>,
+    rx: mpsc::UnboundedReceiver<SearchUpdate>,
+    tx: mpsc::UnboundedSender<SearchUpdate>,
+    handle: Option<JoinHandle<()>>,
 }
 
 impl SearchPanel {
     pub fn new() -> Self {
+        let (tx, rx) = mpsc::unbounded_channel();
         Self {
             active: false,
             query: String::new(),
@@ -81,7 +89,68 @@ impl SearchPanel {
             files_processed: None,
             search_in_progress: false,
             search_progress: None,
+            rx,
+            tx,
+            handle: None,
         }
+    }
+
+    pub async fn recv(&mut self) -> Option<SearchUpdate> {
+        self.rx.recv().await
+    }
+
+    /// Apply a search update to this panel's state
+    pub fn apply_update(&mut self, update: SearchUpdate) {
+        match update {
+            SearchUpdate::Progress { processed, total } => {
+                self.search_progress = Some((processed, total));
+            }
+            SearchUpdate::Results(new_results) => {
+                self.results.extend(new_results);
+                if !self.results.is_empty() && self.selected.is_none() {
+                    self.selected = Some(0);
+                }
+            }
+            SearchUpdate::Finished {
+                files_processed,
+                duration,
+            } => {
+                if self.handle.is_some() {
+                    self.search_in_progress = false;
+                    self.search_time = Some(duration);
+                    self.files_processed = Some(files_processed);
+                    self.search_progress = None;
+                }
+                self.handle = None;
+            }
+        }
+    }
+
+    /// Cancel an in-progress search
+    pub fn cancel(&mut self) {
+        if let Some(h) = self.handle.take() {
+            h.abort();
+            self.search_in_progress = false;
+            self.search_progress = None;
+        }
+    }
+
+    /// Start a global search, managing the handle internally
+    pub fn start_global_search(&mut self, root_path: std::path::PathBuf) {
+        self.cancel();
+        self.results.clear();
+        self.selected = None;
+        self.scroll_offset = 0;
+        self.search_in_progress = true;
+        self.search_progress = None;
+
+        self.handle = Some(Self::spawn_global_search(
+            root_path,
+            self.query.clone(),
+            self.case_sensitive,
+            self.regex_mode,
+            self.tx.clone(),
+        ));
     }
 
     pub fn activate(&mut self, mode: SearchMode) {
@@ -99,6 +168,49 @@ impl SearchPanel {
         self.files_processed = None;
         self.search_in_progress = false;
         self.search_progress = None;
+    }
+
+    pub fn handle_event(&mut self, event: &Event, area: Rect) -> SearchAction {
+        match event {
+            Event::Paste(paste) => {
+                self.query.push_str(&paste.to_string());
+                if self.mode == SearchMode::GlobalSearch {
+                    SearchAction::None
+                } else {
+                    SearchAction::UpdateSearch
+                }
+            }
+            Event::Key(key) => {
+                if key.modifiers.contains(KeyModifiers::CONTROL) {
+                    let mode = match key.code {
+                        KeyCode::Char('f') => Some(SearchMode::Search),
+                        KeyCode::Char('g') => Some(SearchMode::GlobalSearch),
+                        _ => None,
+                    };
+                    if let Some(new_mode) = mode {
+                        self.mode = new_mode;
+                        if !self.query.is_empty() {
+                            return SearchAction::UpdateSearch;
+                        }
+                        return SearchAction::None;
+                    }
+                }
+                self.handle_input(*key, area)
+            }
+            Event::Mouse(mouse) => match mouse.kind {
+                MouseEventKind::Down(_) => self.handle_mouse_click(mouse, area),
+                MouseEventKind::ScrollDown => {
+                    self.scroll_down(area);
+                    SearchAction::None
+                }
+                MouseEventKind::ScrollUp => {
+                    self.scroll_up();
+                    SearchAction::None
+                }
+                _ => SearchAction::None,
+            },
+            _ => SearchAction::None,
+        }
     }
 
     pub fn handle_input(&mut self, key: KeyEvent, area: Rect) -> SearchAction {

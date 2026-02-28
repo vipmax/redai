@@ -12,6 +12,7 @@ mod app;
 mod coder;
 mod config;
 mod diff;
+mod editor;
 mod llm;
 mod prompts;
 mod search;

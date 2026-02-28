@@ -1,4 +1,6 @@
 use crate::app::Theme;
+use crossterm::event::MouseEvent;
+use ratatui::layout::Rect;
 use ratatui::style::Color;
 use ratatui_code_editor::utils::rgb;
 
@@ -263,6 +265,13 @@ pub fn find_color(theme: &Theme, key: &str) -> Option<Color> {
         let (r, g, b) = rgb(*v);
         Color::Rgb(r, g, b)
     })
+}
+
+pub fn is_focused(mouse: &MouseEvent, area: Rect) -> bool {
+    mouse.column >= area.x
+        && mouse.column < area.x + area.width
+        && mouse.row >= area.y
+        && mouse.row < area.y + area.height
 }
 
 #[cfg(test)]
