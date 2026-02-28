@@ -10,12 +10,12 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 pub struct Coder {
-    llm: LlmClient,
+    llm: Option<LlmClient>,
     file_trackers: HashMap<PathBuf, Tracker>,
 }
 
 impl Coder {
-    pub fn new(llm: LlmClient) -> Self {
+    pub fn new(llm: Option<LlmClient>) -> Self {
         Self {
             llm,
             file_trackers: HashMap::new(),
@@ -28,6 +28,10 @@ impl Coder {
         _path: &str,
         cursor: usize,
     ) -> Result<Vec<Edit>> {
+        let Some(llm) = &self.llm else {
+            return Ok(Vec::new());
+        };
+
         let cursor_byte = offset_to_byte(cursor, original);
 
         let context = self.build_context(original, cursor_byte, 3)?;
@@ -46,7 +50,7 @@ impl Coder {
             json!({ "role": "user", "content": REMINDER }),
         ];
 
-        let response = self.llm.chat(messages).await?;
+        let response = llm.chat(messages).await?;
         debug!("response {}", response);
 
         let patch = self.parse_patch(&response, cursor)?;
@@ -210,7 +214,7 @@ fn main() {
 
         let cursor = 70;
 
-        let coder = Coder::new(LlmClient::new("", "", ""));
+        let coder = Coder::new(Some(LlmClient::new("", "", "")));
 
         let context = coder.build_context(&code, cursor, 1).unwrap();
 
@@ -222,7 +226,7 @@ fn main() {
 
     #[test]
     fn test_parse_patch() -> anyhow::Result<()> {
-        let coder = Coder::new(LlmClient::new("", "", ""));
+        let coder = Coder::new(Some(LlmClient::new("", "", "")));
 
         let patch = "<|SEARCH|>let <|cursor|> = 10;<|DIVIDE|>let x = 10;<|REPLACE|>";
         let start_pos = 0;
@@ -238,7 +242,7 @@ fn main() {
 
     #[test]
     fn test_parse_patch_unicode() -> anyhow::Result<()> {
-        let coder = Coder::new(LlmClient::new("", "", ""));
+        let coder = Coder::new(Some(LlmClient::new("", "", "")));
 
         let patch = r#"<|SEARCH|>let <|cursor|> = "йцук";<|DIVIDE|>let x = "йцук";<|REPLACE|>"#;
         let start_pos = 0;

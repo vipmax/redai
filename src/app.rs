@@ -90,7 +90,7 @@ impl App {
         language: &str,
         content: &str,
         filename: &str,
-        llm_client: LlmClient,
+        llm_client: Option<LlmClient>,
     ) -> Result<Self> {
         let root_path = std::env::current_dir().unwrap();
         let theme = vesper();

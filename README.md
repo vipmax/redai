@@ -72,7 +72,7 @@ redai
 Create a `.env` file or export variables in your shell:
 
 ```
-OPENROUTER_API_KEY=your_openrouter_api_key
+OPENROUTER_API_KEY=your_openrouter_api_key   # optional, enables AI autocomplete
 OPENROUTER_BASE_URL=https://openrouter.ai/api/v1   # (optional, default shown)
 OPENROUTER_MODEL=mistralai/codestral-2508     # (optional, default shown)
 ```
@@ -94,6 +94,7 @@ redai
   - Edit code as in a normal editor.
   - `Ctrl+S` to save.
   - `Ctrl+Space` to trigger AI autocomplete/code edit at the cursor.
+  - If `OPENROUTER_API_KEY` is not set, the editor still starts normally and AI autocomplete stays disabled.
   - `Esc` to undo marks or quit.
   - `Control + c` - copy 
   - `Control + v` - paste  
@@ -132,7 +133,7 @@ This approach ensures that completions are context-aware, minimal, and easy to r
 
 redai is configured via environment variables:
 
-- `OPENROUTER_API_KEY` (**required**): Your OpenRouter API key.
+- `OPENROUTER_API_KEY` (optional): Your OpenRouter API key. If omitted, redai starts normally but AI autocomplete is disabled.
 - `OPENROUTER_BASE_URL` (optional): LLM API endpoint. Default: `https://openrouter.ai/api/v1`
 - `OPENROUTER_MODEL` (optional): LLM model name. Default: `mistralai/devstral-medium-2507`
 

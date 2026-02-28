@@ -30,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
 
     set_panic_hook();
 
-    let config = Config::from_env().unwrap();
+    let config = Config::from_env()?;
     let Config {
         api_key,
         base_url,
@@ -58,7 +58,10 @@ async fn main() -> anyhow::Result<()> {
     let terminal = ratatui::init();
     execute!(stdout(), EnableMouseCapture, EnableBracketedPaste)?;
 
-    let llm_client = LlmClient::new(&api_key, &base_url, &model);
+    let llm_client = api_key
+        .as_deref()
+        .filter(|key| !key.trim().is_empty())
+        .map(|key| LlmClient::new(key, &base_url, &model));
 
     let app = App::new(&language, &content, &filename, llm_client)?;
 

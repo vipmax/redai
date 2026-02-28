@@ -2,7 +2,7 @@ use anyhow::Result;
 
 /// Application configuration
 pub struct Config {
-    pub api_key: String,
+    pub api_key: Option<String>,
     pub base_url: String,
     pub model: String,
 }
@@ -10,8 +10,7 @@ pub struct Config {
 impl Config {
     /// Load configuration from environment variables
     pub fn from_env() -> Result<Self> {
-        let api_key = std::env::var("OPENROUTER_API_KEY")
-            .map_err(|_| anyhow::anyhow!("OPENROUTER_API_KEY environment variable not set"))?;
+        let api_key = std::env::var("OPENROUTER_API_KEY").ok();
 
         let base_url = std::env::var("OPENROUTER_BASE_URL")
             .unwrap_or_else(|_| "https://openrouter.ai/api/v1".to_string());
