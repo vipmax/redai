@@ -20,7 +20,7 @@ redai combines a fast, modern TUI code editor with context-aware code completion
 
 Linux:
 ```bash
-curl -L https://github.com/vipmax/redai/releases/latest/download/redai-linux.tar.gz | tar -xz --overwrite
+curl -L https://github.com/vipmax/redai/releases/latest/download/redai-linux.tar.gz | tar -xz
 sudo mv redai /usr/local/bin/
 sudo chmod +x /usr/local/bin/redai
 redai
@@ -28,7 +28,7 @@ redai
 
 Macos:
 ```bash
-curl -L https://github.com/vipmax/redai/releases/latest/download/red-universal-apple-darwin.tar.gz | tar -xz --overwrite
+curl -L https://github.com/vipmax/redai/releases/latest/download/redai-universal-apple-darwin.tar.gz | tar -xz
 sudo mv redai /usr/local/bin/
 sudo chmod +x /usr/local/bin/redai
 redai
