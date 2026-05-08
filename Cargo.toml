@@ -1,6 +1,6 @@
 [package]
 name = "redai"
-version = "0.0.5"
+version = "0.0.6"
 edition = "2024"
 
 [profile.release]
