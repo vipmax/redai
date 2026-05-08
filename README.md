@@ -19,21 +19,36 @@ redai combines a fast, modern TUI code editor with context-aware code completion
 ## Installation
 ### From releases
 
-Linux:
+Recommended (Linux/macOS):
+```bash
+curl -fsSL https://raw.githubusercontent.com/vipmax/redai/main/install.sh | sh
+```
+
+Install a specific version:
+```bash
+curl -fsSL https://raw.githubusercontent.com/vipmax/redai/main/install.sh | sh -s -- --version v0.0.6
+```
+
+Install to a custom directory:
+```bash
+curl -fsSL https://raw.githubusercontent.com/vipmax/redai/main/install.sh | sh -s -- --prefix "$HOME/.local/bin"
+```
+
+Manual install (Linux x86_64):
 ```bash
 curl -L https://github.com/vipmax/redai/releases/latest/download/redai-linux.tar.gz | tar -xz
-sudo mv redai /usr/local/bin/
-sudo chmod +x /usr/local/bin/redai
+mv redai "$HOME/.local/bin/"
+chmod +x "$HOME/.local/bin/redai"
 redai
 ```
 
 The Linux release binary is built with musl for better compatibility across older distributions.
 
-Macos:
+Manual install (macOS):
 ```bash
 curl -L https://github.com/vipmax/redai/releases/latest/download/redai-universal-apple-darwin.tar.gz | tar -xz
-sudo mv redai /usr/local/bin/
-sudo chmod +x /usr/local/bin/redai
+mv redai "$HOME/.local/bin/"
+chmod +x "$HOME/.local/bin/redai"
 redai
 ```
 
