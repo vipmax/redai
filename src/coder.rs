@@ -1,10 +1,11 @@
-use crate::diff::{Edit, compute_text_edits};
+use crate::diff::compute_text_edits;
 use crate::llm::LlmClient;
 use crate::prompts::*;
 use crate::tracker::Tracker;
 use crate::utils::{byte_to_point, offset_to_byte};
 use anyhow::{Result, anyhow};
 use log::debug;
+use ratatui_code_editor::code::Edit;
 use serde_json::json;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -62,16 +63,10 @@ impl Coder {
         debug!("edits {:?}", edits);
 
         let mut edits = edits
-            .iter()
-            .map(|edit| {
-                let s = edit.start + start;
-                let e = edit.end + start;
-                Edit {
-                    start: s,
-                    end: e,
-                    text: edit.text.clone(),
-                    kind: edit.kind.clone(),
-                }
+            .into_iter()
+            .map(|mut edit| {
+                edit.start += start;
+                edit
             })
             .collect::<Vec<_>>();
 

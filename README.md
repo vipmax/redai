@@ -12,7 +12,7 @@ redai combines a fast, modern TUI code editor with context-aware code completion
 - **AI Code Completion & Editing**: Context-aware suggestions and code edits using LLMs (OpenRouter, CodeStral, etc.).
 - **File Tree**: Browse and open files in your project directory.
 - **Smart File Watching**: Expanded folders refresh automatically when files or directories are added, removed, renamed, or modified externally.
-- **Keyboard & Mouse Support**: Navigate, edit, and resize panes with keyboard and mouse.
+- **Keyboard & Mouse 🖱️ Support**: Navigate, edit, and resize panes with keyboard and mouse.
 - **Visual Diff**: Visualize code changes and AI-suggested edits.
 - **Configurable**: Set your LLM provider, model, and API key via environment variables.
 

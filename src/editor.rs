@@ -4,7 +4,7 @@ use ratatui::Frame;
 use ratatui::layout::{Position, Rect};
 use ratatui::style::{Color, Style};
 use ratatui::widgets::{Paragraph, Wrap};
-use ratatui_code_editor::code::{EditBatch, EditKind, EditState};
+use ratatui_code_editor::code::{Edit, EditBatch, EditState};
 use ratatui_code_editor::editor::Editor as CodeEditor;
 use ratatui_code_editor::selection::Selection;
 use ratatui_code_editor::utils::get_lang;
@@ -16,7 +16,6 @@ use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
 
 use crate::coder::Coder;
-use crate::diff::EditKind::*;
 use crate::diff::*;
 use crate::llm::LlmClient;
 use crate::search::SearchMode;
@@ -262,26 +261,10 @@ impl EditorPanel {
         }
 
         let changed_ranges = compute_changed_ranges_normalized(&edits);
-        let editor_edits = edits
-            .iter()
-            .map(|e| {
-                let kind = match &e.kind {
-                    Insert => EditKind::Insert {
-                        offset: e.start,
-                        text: e.text.clone(),
-                    },
-                    Delete => EditKind::Remove {
-                        offset: e.start,
-                        text: e.text.clone(),
-                    },
-                };
-                ratatui_code_editor::code::Edit { kind }
-            })
-            .collect::<Vec<_>>();
 
         let last_change = changed_ranges.last().unwrap();
         let editbatch = EditBatch {
-            edits: editor_edits,
+            edits,
             state_before: Some(EditState {
                 offset: self.editor.get_cursor(),
                 selection: self.editor.get_selection(),
@@ -314,25 +297,9 @@ impl EditorPanel {
 
         let cursor_before = self.editor.get_cursor();
         let selection_before = self.editor.get_selection();
-        let editor_edits = edits
-            .iter()
-            .map(|e| {
-                let kind = match &e.kind {
-                    Insert => EditKind::Insert {
-                        offset: e.start,
-                        text: e.text.clone(),
-                    },
-                    Delete => EditKind::Remove {
-                        offset: e.start,
-                        text: e.text.clone(),
-                    },
-                };
-                ratatui_code_editor::code::Edit { kind }
-            })
-            .collect::<Vec<_>>();
 
         let editbatch = EditBatch {
-            edits: editor_edits,
+            edits,
             state_before: Some(EditState {
                 offset: cursor_before,
                 selection: selection_before,

@@ -31,7 +31,7 @@ pub enum Message {
     OpenFile(String),
     SaveCurrentFile,
     FileChangedExternally(notify::Event),
-    AutocompleteResult(Result<Vec<crate::diff::Edit>>),
+    AutocompleteResult(Result<Vec<ratatui_code_editor::code::Edit>>),
     None,
 }
 
@@ -192,7 +192,8 @@ impl App {
                     }
                     MouseEventKind::Drag(_) => {
                         if self.left_panel.is_resizing {
-                            let total = self.left_panel.area.width + self.editor_panel.area.width + 2;
+                            let total =
+                                self.left_panel.area.width + self.editor_panel.area.width + 2;
                             let ratio = (mouse.column as f32 / total as f32 * 100.0) as u16;
                             self.left_panel.split_ratio = ratio.clamp(0, 100) as usize;
                         }
@@ -211,14 +212,17 @@ impl App {
         if self.left_panel.focused {
             match self.left_panel.mode {
                 LeftPanelMode::Search => {
-                    let action = self.left_panel.search.handle_event(event, self.left_panel.area);
+                    let action = self
+                        .left_panel
+                        .search
+                        .handle_event(event, self.left_panel.area);
                     Message::SearchAction(action)
                 }
                 LeftPanelMode::Tree => {
-                    let action = self
-                        .left_panel
-                        .tree
-                        .handle_event(event, self.left_panel.area, &self.theme);
+                    let action =
+                        self.left_panel
+                            .tree
+                            .handle_event(event, self.left_panel.area, &self.theme);
                     match action {
                         TreeAction::OpenFile(path) => Message::OpenFile(path),
                         TreeAction::Quit => Message::Quit,
